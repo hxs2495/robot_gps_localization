@@ -1,0 +1,3 @@
+# 请求空
+---
+string[] dates  # 返回日志日期列表，格式: YYYY-MM-DD

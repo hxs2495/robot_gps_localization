@@ -1,0 +1,49 @@
+gpgga_filter_node:
+  ros__parameters:
+    # NavSatFix.status.status最低要求。-1允许STATUS_NO_FIX，由后级再次检查有效FIX。
+    required_status: -1
+    recover_frame_count: 1
+
+gps_to_utm_odometry_node:
+  ros__parameters:
+    zone_northp_topic: /utm/zone/northp
+    frame_id: utm
+    child_frame_id: gps
+    use_velocity: false
+    use_yaw: false
+    # 航向用于把ENU/UTM轨迹旋转到机器人启动方向。
+    use_orientation: true
+    require_orientation: true
+    # 航向消息未提供有效orientation_covariance[8]时的yaw方差(rad^2)。
+    orientation_variance: 0.04
+    unobserved_orientation_variance: 1000000.0
+    # 防止未知/全零协方差让EKF把GPS当成无噪声观测。
+    position_variance_floor: 0.01
+    unknown_position_variance: 4.0
+
+gps_global_odometry_node:
+  ros__parameters:
+    # GPS是全局绝对观测，必须直接属于map，避免经map->odom回灌全局EKF。
+    global_frame_id: map
+    init_frames: 10
+    two_d_mode: true
+    # 默认关闭，避免和FAST-LIO或robot_localization重复发布odom->base_footprint。
+    publish_tf: false
+    # 发布转换后GPS轨迹，供RViz与FAST-LIO的/fastlio_path对比。
+    publish_path: true
+    path_topic: /gps_path
+    # 小于该距离的相邻GPS点不加入轨迹；设为0保留每帧。
+    path_min_distance: 0.05
+    # 只保留最新点以限制内存；设为0表示不限制。
+    path_max_points: 10000
+
+    # 标定定义为T_gps_base：GPS天线坐标系中的机器人基座位姿。
+    # 无自定义config_file时使用以下默认小车标定值。
+    gps_to_base:
+      x: 0.726732
+      y: -0.109451
+      z: 0.0
+      qx: 0.0
+      qy: 0.0
+      qz: -0.70710678
+      qw: 0.70710678

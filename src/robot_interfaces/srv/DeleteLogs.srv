@@ -1,0 +1,5 @@
+# 请求
+string[] paths  # 要删除的日志文件相对路径
+---
+bool success
+string message

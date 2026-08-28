@@ -1,0 +1,52 @@
+# ===== ROS2 / colcon 构建产物 =====
+build/
+install/
+log/
+**/log/
+rosbag2*
+ros2_bag_*
+robot_data/*
+src/FAST_LIO_ROS2/include/ikd-Tree/documents/
+src/FAST_LIO_ROS2/include/ikd-Tree/materials/imgs/
+src/FAST_LIO_ROS2/Log/
+src/FAST_LIO_ROS2/rviz/
+rosbag_park_dataset_lio_sam/
+
+# ===== CMake 中间产物 =====
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.o
+*.obj
+*.png
+*.assets
+*.pdf
+*.gif
+*.jpg
+
+# ===== Python 缓存 =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ===== 程序运行输出（地图 / 点云等大文件）=====
+*.pcd
+*.bt
+*.ot
+*.png.tmp
+
+# ===== 系统 / 编辑器临时文件 =====
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+*.user
+
+# ===== 日志 / 临时输出 =====
+*.log
+*.tmp
+*.bak

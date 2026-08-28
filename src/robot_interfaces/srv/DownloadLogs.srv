@@ -1,0 +1,7 @@
+# 请求
+string path
+
+---
+# 响应
+string base64_data
+string error_msg

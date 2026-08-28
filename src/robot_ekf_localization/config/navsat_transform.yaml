@@ -1,0 +1,54 @@
+### NavSat Transform Configuration ###
+# NavSat转换节点：将GPS数据(WGS84经纬度)转换为本地笛卡尔坐标系的里程计消息
+navsat_transform:
+  ros__parameters:
+    use_sim_time: true
+    # 滤波器频率
+    frequency: 30.0
+
+    # 延迟启动时间（秒）- 等待系统稳定
+    delay: 3.0
+
+    # 磁偏角（度）- 用于修正磁罗盘偏差
+    # 中国江苏地区约为-6度左右，需根据实际位置调整
+    # 可以从 https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml 查询
+    magnetic_declination_radians: 0.0  
+
+    # yaw偏移（弧度）- 机器人坐标系与东北天坐标系的偏移
+    yaw_offset: 3.14159265  # 180度转弧度，表示机器人坐标系与东北天坐标系相反
+
+    # 是否清零高度
+    zero_altitude: true
+
+    # 是否广播UTM变换
+    broadcast_utm_transform: true
+
+    # 是否广播UTM变换为父坐标系
+    broadcast_utm_transform_as_parent_frame: true
+
+    # 是否发布过滤后的GPS位置
+    publish_filtered_gps: true
+
+    # 是否使用里程计的yaw角
+    # true: 使用里程计提供的yaw角（推荐，因为激光里程计的yaw更准确）
+    # false: 使用GPS推算的yaw角（GPS移动速度慢时不准确）
+    use_odometry_yaw: true
+
+    # 是否等待datum服务
+    wait_for_datum: false
+
+    # 坐标系设置
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: map
+
+    # 是否使用手动设置的datum（原点）
+    # false: 自动使用第一个GPS点作为原点
+    # true: 使用下面设置的datum参数
+    use_manual_datum: false
+
+    # 手动设置的datum参数（当use_manual_datum为true时使用）
+    # datum: [纬度, 经度, 高度（米）, yaw（弧度）]
+    # 示例：基于当前GPS位置设置原点
+    # datum: [31.709919942833334, 119.00898383816667, 33.8096, 0.0]

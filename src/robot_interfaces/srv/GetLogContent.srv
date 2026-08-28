@@ -1,0 +1,10 @@
+# 请求
+string path
+uint32 offset
+uint32 size
+
+---
+# 响应
+string content
+bool eof
+string error_msg

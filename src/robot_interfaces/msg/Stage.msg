@@ -1,0 +1,5 @@
+float32 delta_left_img
+float32 delta_right_img
+float32 delta_acc_x
+float32 delta_acc_y
+float32 delta_acc_z
