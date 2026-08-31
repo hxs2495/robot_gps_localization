@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""GPS到机器人全局坐标系里程计转换。
-
-数据链路:
-  NavSatFix -> UTM Odometry -> robot global-frame Odometry
-
-config_file不传、传空字符串或文件不存在时，使用包内默认配置。
-"""
+"""Launch the NavSatFix-to-global-odometry conversion chain."""
 
 import os
 
@@ -131,7 +125,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "use_sim_time",
                 default_value="false",
-                description="默认使用rosbag的/clock；实时传感器运行时设为false",
+                description="是否使用/clock仿真时间；回放rosbag时设为true",
             ),
             DeclareLaunchArgument(
                 "gps_topic", default_value="/fix", description="原始NavSatFix话题"

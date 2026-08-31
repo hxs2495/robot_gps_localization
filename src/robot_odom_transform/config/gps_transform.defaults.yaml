@@ -6,11 +6,8 @@ gpgga_filter_node:
 
 gps_to_utm_odometry_node:
   ros__parameters:
-    zone_northp_topic: /utm/zone/northp
     frame_id: utm
     child_frame_id: gps
-    use_velocity: false
-    use_yaw: false
     # 航向用于把ENU/UTM轨迹旋转到机器人启动方向。
     use_orientation: true
     require_orientation: true
