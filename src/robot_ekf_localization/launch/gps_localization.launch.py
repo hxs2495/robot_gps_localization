@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""Fuse FAST_LIO local odometry and converted GPS odometry with two EKFs.
-
-Inputs:
-  /Odometry       - FAST_LIO pose in odom
-  /odometry/gps   - converted GPS absolute pose in map
-
-Outputs:
-  /odometry/local  - continuous local estimate in odom
-  /odometry/global - GPS-corrected global estimate in map
-
-TF ownership:
-  local EKF:  odom -> base_footprint
-  global EKF: map  -> odom
-"""
+"""Launch local and global EKFs for LiDAR-GPS fusion."""
 
 import os
 
@@ -74,7 +61,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "use_sim_time",
                 default_value="true",
-                description="默认使用rosbag的/clock；实时传感器运行时设为false",
+                description="是否使用/clock仿真时间；实时传感器运行时设为false",
             ),
             DeclareLaunchArgument(
                 "local_config_file",

@@ -32,25 +32,22 @@
        ▼                    │                    ▼
 ┌──────────────────┐        │            ┌──────────────┐
 │   FAST_LIO       │        │            │  (内置融合)  │
-│  激光里程计+IMU  │◄───────┘            └──────────────┘
-│   /Odometry      │
-└──────┬───────────┘
-       │
-       ▼
-┌──────────────────┐
-│    局部EKF       │  平滑滤波
-│  /odometry/local │
-└────┬──────┬──────┘
-     │      │
-     │      └──────────────┐
-     │                     │
-     ▼                     ▼
-┌──────────────────┐  ┌──────────────────┐
-│ navsat_transform │  │    全局EKF       │
-│   GPS坐标转换    │  │   融合定位器     │
-│  /odometry/gps   │─>│ /odometry/global │
-└──────────────────┘  │  发布map→odom TF │
-                      └──────────────────┘
+│  激光里程计+IMU  │        │            └──────────────┘
+│   /Odometry      │        ▼
+└──────┬───────────┘  ┌──────────────────┐
+       │              │ robot_odom_      │
+       ▼              │ transform        │
+┌──────────────────┐  │ /odometry/gps    │
+│    局部EKF       │  └────────┬─────────┘
+│  /odometry/local │           │
+└────────┬─────────┘           │
+         └──────────┬──────────┘
+                    ▼
+            ┌──────────────────┐
+            │    全局EKF       │
+            │ /odometry/global │
+            │  发布map→odom TF │
+            └──────────────────┘
 ```
 
 ## 目录结构
@@ -65,13 +62,12 @@ robot_gps_localization/
 │   ├── robot_ekf_localization/     # 融合定位核心包
 │   │   ├── config/
 │   │   │   ├── ekf_local.yaml       # 局部EKF配置
-│   │   │   ├── ekf_global.yaml      # 全局EKF配置
-│   │   │   └── navsat_transform.yaml # GPS转换配置
+│   │   │   └── ekf_global.yaml      # 全局EKF配置
 │   │   ├── launch/
 │   │   │   ├── gps_localization.launch.py          # 完整融合系统
-│   │   │   ├── gps_transform_only.launch.py        # GPS转换测试
-│   │   │   └── local_ekf_localization.launch.py    # 局部EKF测试
-│   │   └── scripts/                 # 工具脚本
+│   │   │   ├── local_ekf_localization.launch.py    # 独立局部EKF
+│   │   │   └── global_ekf_localization.launch.py   # 独立全局EKF
+│   ├── robot_odom_transform/        # GPS坐标与里程计转换
 │   └── robot_navigation/           # 机器人导航和URDF模型
 └── design/                         # 技术文档
     ├── global_fusion_localization_fix.md           # 全局融合修正文档

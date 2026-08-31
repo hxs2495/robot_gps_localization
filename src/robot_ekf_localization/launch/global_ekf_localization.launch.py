@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""启动 FAST_LIO + GPS 的全局 EKF。
-
-前置条件:
-  /odometry/local - odom 坐标系中的连续局部里程计
-  /odometry/gps   - map 坐标系中的 GPS 绝对里程计
-  odom -> base_footprint TF 由局部 EKF 唯一发布
-
-输出:
-  /odometry/global - map 坐标系中的全局融合里程计
-  map -> odom TF   - GPS 对局部里程计漂移的动态校正
-"""
+"""Launch the global EKF for LiDAR-GPS fusion."""
 
 import os
 
@@ -50,7 +40,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "use_sim_time",
                 default_value="true",
-                description="默认使用rosbag的/clock；实时传感器运行时设为false",
+                description="是否使用/clock仿真时间；实时传感器运行时设为false",
             ),
             DeclareLaunchArgument(
                 "config_file",
