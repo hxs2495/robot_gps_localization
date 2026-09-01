@@ -1,4 +1,4 @@
-### FAST_LIO + GPS 全局EKF（动态维护map到odom）###
+### FAST_LIO + GPS 全局EKF（map与odom固定重合）###
 ekf_filter_node_global:  # 全局robot_localization EKF节点名，必须与launch中的name一致。
   ros__parameters:  # ROS 2参数区；以下参数仅加载到全局EKF节点。
     frequency: 30.0  # EKF预测和输出频率(Hz)；增大响应更及时但CPU占用更高。
@@ -9,17 +9,17 @@ ekf_filter_node_global:  # 全局robot_localization EKF节点名，必须与laun
     transform_timeout: 0.2  # 等待所需TF的最长时间(s)；增大可容忍TF延迟但会增加阻塞。
     print_diagnostics: true  # true时发布诊断信息，便于检查传感器超时、拒绝和配置错误。
     debug: false  # true时输出大量滤波调试数据，排障时短时启用，正常运行应关闭。
-    # world_frame=map时，本节点根据全局状态与局部odom->base_footprint动态计算map->odom。
-    publish_tf: true  # true时由全局EKF发布动态map->odom；不得再发布静态或其他同名TF。
+    # world_frame=odom时，本节点发布融合后的odom->base_footprint；map->odom由launch静态发布。
+    publish_tf: true  # true时由全局EKF发布odom->base_footprint；局部EKF必须关闭同名TF。
     publish_acceleration: false  # true时额外发布加速度状态；当前没有消费者，关闭可减少输出。
     predict_to_current_time: true  # true时将最后状态预测到当前ROS时间，可减少输出滞后。
     reset_on_time_jump: true  # 仿真时间向后跳变（如rosbag循环）时自动重置滤波器。
 
-    map_frame: map  # GPS约束下的全局坐标系；允许通过map->odom修正局部累计漂移。
-    odom_frame: odom  # 局部连续坐标系；由局部EKF发布odom->base_footprint。
+    map_frame: map  # GPS输入所在坐标系；通过单位静态TF与odom永久重合。
+    odom_frame: odom  # 局部与全局融合共同使用的连续坐标系，也是本节点输出世界坐标系。
     base_link_frame: base_footprint  # 被估计的机器人基座坐标系，应与输入里程计child_frame_id一致。
-    # 全局EKF必须工作在map，robot_localization才会动态发布map->odom修正关系。
-    world_frame: map  # EKF输出所在坐标系；设为map后输出/map定位并维护map->odom。
+    # 固定重合策略必须工作在odom，禁止全局EKF动态维护map->odom。
+    world_frame: odom  # EKF输出位于odom；map->odom始终由单位静态TF保持零平移、零旋转。
 
     # 局部EKF提供x/y/yaw相邻帧位姿增量；GPS失效时全局轨迹直接沿局部定位轨迹继续运动。
     odom0: /odometry/local  # 第一路输入：局部EKF里程计话题；改话题名时需同步修改launch。
@@ -86,10 +86,12 @@ gps_recovery_smoother:  # GPS可用性状态机节点名，必须与launch中的
     raw_gps_topic: /odometry/gps  # 原始GPS里程计输入话题，要求位姿有效且frame_id通常为map。
     local_odom_topic: /odometry/local  # 局部EKF输入话题，用于时间对齐及GPS失效后的轨迹参考。
     output_topic: /odometry/gps/smoothed  # 平滑观测输出话题，必须与全局EKF的odom1保持一致。
-    output_frame_id: map  # 平滑GPS绝对观测的父坐标系；必须与全局EKF的map_frame一致。
+    output_frame_id: map  # 平滑GPS仍位于map；单位静态map->odom负责无偏移转换到odom。
 
-    # 超过该时间没有有效GPS即停止绝对观测，由odom0局部位姿增量贴合局部轨迹。
+    # 超过该时间没有有效GPS后，平滑器开始把全局绝对观测贴回局部融合位姿。
     gps_timeout: 1.0  # GPS无有效数据超过此时长(s)即判定丢失；应大于GPS正常发布周期。
+    loss_transition_duration: 3.0  # GPS丢失后GPS校正量归零、全局轨迹贴回局部轨迹的时长(s)。
+    local_fallback_covariance_scale: 1.0  # 回退期间局部绝对位姿协方差倍率；减小会更强地贴合局部。
     # GPS首次出现或丢失后恢复时，从当前局部延伸位置平滑靠近GPS所需时间。
     recovery_duration: 5.0  # GPS恢复后重新贴向GPS的计划时长(s)；减小恢复更快但变化更明显。
     # 恢复过渡期间对GPS相对局部里程计校正量的低通时间常数；稳定跟踪后不再低通GPS。

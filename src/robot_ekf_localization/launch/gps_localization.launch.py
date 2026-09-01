@@ -74,6 +74,23 @@ def generate_launch_description():
         ],
     )
 
+    static_map_to_odom = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_map_to_odom",
+        output="screen",
+        arguments=[
+            "--x", "0.0",
+            "--y", "0.0",
+            "--z", "0.0",
+            "--roll", "0.0",
+            "--pitch", "0.0",
+            "--yaw", "0.0",
+            "--frame-id", "map",
+            "--child-frame-id", "odom",
+        ],
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -118,14 +135,15 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "publish_local_tf",
-                default_value="true",
-                description="由局部EKF发布连续的odom->base_footprint",
+                default_value="false",
+                description="固定map=odom模式下关闭局部EKF的重复odom->base_footprint",
             ),
             DeclareLaunchArgument(
                 "publish_global_tf",
                 default_value="true",
-                description="由全局EKF动态发布GPS修正后的map->odom",
+                description="由全局EKF发布GPS修正后的odom->base_footprint",
             ),
+            static_map_to_odom,
             local_ekf,
             gps_recovery_smoother,
             global_ekf,

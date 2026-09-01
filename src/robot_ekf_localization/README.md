@@ -9,16 +9,16 @@ GPS 经纬度转换由 `robot_odom_transform` 负责，本包只消费转换后�
 /Odometry (FAST-LIO, odom)
   -> ekf_filter_node_local
   -> /odometry/local (odom)
-  -> odom -> base_footprint TF
                          \
                           -> ekf_filter_node_global
                          /
 /odometry/gps (map)
   -> gps_recovery_smoother
   -> /odometry/gps/smoothed (map) ----+
-  -> /odometry/global (map)
+  -> /odometry/global (odom)
 
-ekf_filter_node_global -> 动态 map -> odom TF
+ekf_filter_node_global -> odom -> base_footprint TF
+static_transform_publisher -> 单位静态 map -> odom TF
 ```
 
 - 局部 EKF 只融合 FAST-LIO 的平面 `x/y/yaw`，输出连续的局部里程计；
@@ -26,11 +26,11 @@ ekf_filter_node_global -> 动态 map -> odom TF
   与二维融合平面对齐；局部及全局 EKF 的 `two_d_mode` 继续保证输出 z=0；
 - 全局 EKF 将局部轨迹作为差分运动约束，并用 GPS 的绝对 `x/y/yaw` 校正漂移；
 - FAST-LIO 已经融合 IMU，本包不重复融合同一 IMU；
-- 局部 EKF 唯一发布连续的 `odom -> base_footprint`；
-- 全局 EKF 在 `world_frame=map` 下动态发布 `map -> odom`，GPS 低频修正
-  会体现在该 TF 中，不会破坏局部里程计连续性；
-- GPS 超时后平滑节点停止发布绝对观测，全局 EKF 仅用局部差分增量外推；
-  GPS 恢复后再限速、平滑地重新锚定 GPS。
+- 完整融合时局部 EKF 不发布 TF，全局 EKF 唯一发布
+  `odom -> base_footprint`；
+- `map -> odom` 固定为单位静态变换，不由 EKF 动态修正；
+- GPS 超时后全局绝对观测平滑贴回局部位姿，GPS 恢复后再限速、平滑地
+  重新锚定 GPS。
 
 旧版 `navsat_transform`、Cartographer EKF、GPS 时间戳改写及失效测试脚本已经移除。
 
@@ -93,7 +93,7 @@ ros2 launch robot_ekf_localization gps_localization.launch.py use_sim_time:=fals
 ## 配置
 
 - `config/ekf_local.yaml`：局部 EKF，`world_frame=odom`；
-- `config/ekf_global.yaml`：全局 EKF，`world_frame=map`。
+- `config/ekf_global.yaml`：全局 EKF，`world_frame=odom`。
 
 全局 EKF 的 GPS 输入必须满足：
 
@@ -102,14 +102,14 @@ ros2 launch robot_ekf_localization gps_localization.launch.py use_sim_time:=fals
 /odometry/gps/smoothed.header.frame_id == map
 ```
 
-不得再启动静态 `map -> odom` 发布器。局部 EKF 提供
-`odom -> base_footprint`，全局 EKF 根据 GPS 绝对位姿与局部连续位姿之间的
-偏差动态维护 `map -> odom`。
+启动文件提供唯一的单位静态 `map -> odom`。全局 EKF 在 `odom` 中输出
+GPS 修正后的 `odom -> base_footprint`；不得再启动其他同名 TF 发布器。
 
 GPS 状态机参数位于 `gps_recovery_smoother.ros__parameters`。其中
-`gps_timeout` 控制失效判定，`recovery_duration` 和两个最大校正速度控制恢复
-平滑度，`tracking_covariance_scale` 控制正常 GPS 的置信度（默认 `0.01`，
-数值越小越信任 GPS）。
+`gps_timeout` 控制失效判定，`loss_transition_duration` 控制贴回局部轨迹的
+时长，`recovery_duration` 和两个最大校正速度控制恢复平滑度，
+`tracking_covariance_scale` 控制正常 GPS 的置信度（默认 `0.01`，数值越小
+越信任 GPS）。
 
 ## 验证与调参
 

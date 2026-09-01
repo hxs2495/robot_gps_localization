@@ -90,7 +90,7 @@ class GpsRecoverySmoother(Node):
     WAITING = 'waiting'
     RECOVERING = 'recovering'
     TRACKING = 'tracking'
-    LOCAL_PROPAGATION = 'local_propagation'
+    LOCAL_FALLBACK = 'local_fallback'
 
     def __init__(self):
         super().__init__('gps_recovery_smoother')
@@ -99,6 +99,8 @@ class GpsRecoverySmoother(Node):
         self.declare_parameter('output_topic', '/odometry/gps/smoothed')
         self.declare_parameter('output_frame_id', 'map')
         self.declare_parameter('gps_timeout', 1.0)
+        self.declare_parameter('loss_transition_duration', 3.0)
+        self.declare_parameter('local_fallback_covariance_scale', 1.0)
         self.declare_parameter('recovery_duration', 5.0)
         self.declare_parameter('correction_time_constant', 0.5)
         self.declare_parameter('recovery_covariance_scale', 10.0)
@@ -114,6 +116,13 @@ class GpsRecoverySmoother(Node):
             'output_frame_id'
         ).value
         self.gps_timeout = max(0.01, self.get_parameter('gps_timeout').value)
+        self.loss_transition_duration = max(
+            0.0, self.get_parameter('loss_transition_duration').value
+        )
+        self.local_fallback_covariance_scale = max(
+            1.0e-6,
+            self.get_parameter('local_fallback_covariance_scale').value,
+        )
         self.recovery_duration = max(
             0.0, self.get_parameter('recovery_duration').value
         )
@@ -164,15 +173,17 @@ class GpsRecoverySmoother(Node):
         self.current_correction = (0.0, 0.0, 0.0)
         self.recovery_start_correction = self.current_correction
         self.filtered_target_correction = self.current_correction
+        self.fallback_start_correction = self.current_correction
         self.last_gps_receive_ns = None
         self.recovery_start_ns = 0
         self.tracking_start_ns = 0
+        self.fallback_start_ns = 0
         self.last_update_ns = 0
         self.have_ever_tracked = False
 
         self.get_logger().info(
             f'GPS状态机已启动: {gps_topic} + {local_topic} -> '
-            f'{output_topic}; GPS超时后由局部差分外推'
+            f'{output_topic}; GPS超时后平滑贴回局部定位'
         )
 
     def now_ns(self):
@@ -202,6 +213,8 @@ class GpsRecoverySmoother(Node):
             and stamp - self.local_history[0][0] > 5000000000
         ):
             self.local_history.popleft()
+        if self.mode == self.LOCAL_FALLBACK:
+            self.publish_local_fallback(message, pose)
 
     def gps_callback(self, message):
         """Smooth GPS reacquisition and publish a valid absolute observation."""
@@ -226,7 +239,7 @@ class GpsRecoverySmoother(Node):
             and (now - self.last_gps_receive_ns) * 1.0e-9 > self.gps_timeout
         )
         start_recovery = (
-            self.mode in (self.WAITING, self.LOCAL_PROPAGATION)
+            self.mode in (self.WAITING, self.LOCAL_FALLBACK)
             or timed_out
             or time_jumped
         )
@@ -384,11 +397,54 @@ class GpsRecoverySmoother(Node):
         ]
         self.output_publisher.publish(output)
 
+    def publish_local_fallback(self, local_odometry, local_pose):
+        """Publish a smooth absolute observation that converges to local pose."""
+        now = self.now_ns()
+        progress = (
+            1.0
+            if self.loss_transition_duration <= 0.0
+            else max(
+                0.0,
+                min(
+                    1.0,
+                    (now - self.fallback_start_ns)
+                    * 1.0e-9
+                    / self.loss_transition_duration,
+                ),
+            )
+        )
+        self.current_correction = interpolate_pose(
+            self.fallback_start_correction,
+            (0.0, 0.0, 0.0),
+            smooth_step(progress),
+        )
+        output_pose = compose_pose(self.current_correction, local_pose)
+
+        output = Odometry()
+        output.header = local_odometry.header
+        output.header.frame_id = self.output_frame_id
+        output.child_frame_id = local_odometry.child_frame_id
+        output.pose = local_odometry.pose
+        output.twist = local_odometry.twist
+        output.pose.pose.position.x = output_pose[0]
+        output.pose.pose.position.y = output_pose[1]
+        output.pose.pose.position.z = 0.0
+        output.pose.pose.orientation.x = 0.0
+        output.pose.pose.orientation.y = 0.0
+        output.pose.pose.orientation.z = math.sin(output_pose[2] * 0.5)
+        output.pose.pose.orientation.w = math.cos(output_pose[2] * 0.5)
+        output.pose.covariance = [
+            value * self.local_fallback_covariance_scale
+            if math.isfinite(value) else value
+            for value in output.pose.covariance
+        ]
+        self.output_publisher.publish(output)
+
     def check_gps_timeout(self):
-        """Stop absolute observations and let local differential odometry coast."""
+        """Detect GPS loss and start a smooth transition to local pose."""
         if self.last_gps_receive_ns is None or self.mode in (
             self.WAITING,
-            self.LOCAL_PROPAGATION,
+            self.LOCAL_FALLBACK,
         ):
             return
         now = self.now_ns()
@@ -396,9 +452,11 @@ class GpsRecoverySmoother(Node):
             now < self.last_gps_receive_ns
             or (now - self.last_gps_receive_ns) * 1.0e-9 > self.gps_timeout
         ):
-            self.mode = self.LOCAL_PROPAGATION
+            self.fallback_start_correction = self.current_correction
+            self.fallback_start_ns = now
+            self.mode = self.LOCAL_FALLBACK
             self.get_logger().warning(
-                'GPS超时：停止全局绝对观测，由局部差分里程计继续外推'
+                'GPS超时：开始平滑贴回局部融合定位'
             )
 
 
