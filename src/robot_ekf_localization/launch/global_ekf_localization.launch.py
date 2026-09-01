@@ -35,6 +35,23 @@ def generate_launch_description():
         ],
     )
 
+    static_map_to_odom = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_map_to_odom",
+        output="screen",
+        arguments=[
+            "--x", "0.0",
+            "--y", "0.0",
+            "--z", "0.0",
+            "--roll", "0.0",
+            "--pitch", "0.0",
+            "--yaw", "0.0",
+            "--frame-id", "map",
+            "--child-frame-id", "odom",
+        ],
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -60,19 +77,20 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "global_odom_topic",
                 default_value="/odometry/global",
-                description="map坐标系中的全局融合里程计输出",
+                description="odom坐标系中的全局融合里程计输出",
             ),
             DeclareLaunchArgument(
                 "publish_tf",
                 default_value="true",
-                description="由全局EKF唯一发布动态map->odom",
+                description="由全局EKF发布GPS修正后的odom->base_footprint",
             ),
             LogInfo(
                 msg=(
                     "全局EKF要求 /odometry/gps.header.frame_id=map，"
-                    "map->odom是动态漂移校正，不能同时发布静态变换"
+                    "map->odom固定为单位静态变换；请勿再发布同名TF"
                 )
             ),
+            static_map_to_odom,
             global_ekf,
         ]
     )

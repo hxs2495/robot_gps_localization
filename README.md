@@ -113,13 +113,14 @@ source install/setup.bash
 /Odometry (FAST_LIO, odom)
   -> ekf_filter_node_local
   -> /odometry/local
-  -> odom -> base_footprint TF
                          \
                           -> ekf_filter_node_global
                          /
 /odometry/gps (map) ----+
-  -> /odometry/global (map)
-  -> map -> odom TF
+  -> /odometry/global (odom)
+  -> odom -> base_footprint TF
+
+map -> odom：单位静态 TF
 
 /gps_path (map)  <---- GPS 转换轨迹
 /fastlio_path (odom) <- FAST_LIO 局部轨迹
@@ -129,10 +130,10 @@ source install/setup.bash
   因此不再把同一 IMU 重复送入 EKF。
 - 全局 EKF 将局部轨迹作为差分运动约束，保留短时连续性。
 - GPS 提供绝对 `x/y/yaw`，用于校正局部轨迹的长期漂移。
-- FAST_LIO 当前已关闭自身 TF 广播；`odom -> base_footprint` 由局部 EKF
-  唯一发布，`map -> odom` 由全局 EKF 唯一发布。
-- `map -> odom` 是 GPS 对局部漂移的动态校正，不能再发布同名静态变换。
-  启动时两者应近似重合，之后允许平滑变化。
+- FAST_LIO 当前已关闭自身 TF 广播；完整融合启动时，全局 EKF 唯一发布
+  GPS 修正后的 `odom -> base_footprint`。
+- `map -> odom` 固定为零平移、零旋转的单位静态变换，不再动态维护；请勿
+  启动其他同名 TF 发布者。
 
 ## 启动
 
@@ -199,7 +200,7 @@ ros2 launch robot_ekf_localization gps_localization.launch.py use_sim_time:=fals
 | `/gps_path`        | `map`                     | 转换后的 GPS 路径     |
 | `/fastlio_path`    | `odom`                    | FAST_LIO 局部路径     |
 | `/odometry/local`  | `odom -> base_footprint` | 局部 EKF 输出         |
-| `/odometry/global` | `map -> base_footprint`  | 最终全局融合里程计    |
+| `/odometry/global` | `odom -> base_footprint` | 最终全局融合里程计    |
 
 所有话题均可通过 launch 参数覆盖：
 
@@ -236,7 +237,7 @@ ros2 run tf2_ros tf2_echo odom base_footprint
 ```
 
 全局 EKF 运行后，在 RViz 中将 Fixed Frame 设为 `map`，添加两个 `Path`
-显示即可直接对比（`/fastlio_path` 会经动态 `map -> odom` 转换）：
+显示即可直接对比（`map -> odom` 为单位静态变换）：
 
 - `/gps_path`：转换后的 GPS 轨迹；
 - `/fastlio_path`：FAST_LIO 局部轨迹。

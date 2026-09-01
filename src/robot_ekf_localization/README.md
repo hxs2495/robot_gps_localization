@@ -9,20 +9,22 @@ GPS 经纬度转换由 `robot_odom_transform` 负责，本包只消费转换后�
 /Odometry (FAST-LIO, odom)
   -> ekf_filter_node_local
   -> /odometry/local (odom)
-  -> odom -> base_footprint TF
                          \
                           -> ekf_filter_node_global
                          /
 /odometry/gps (map) ----+
-  -> /odometry/global (map)
-  -> map -> odom TF
+  -> /odometry/global (odom)
+  -> odom -> base_footprint TF
+
+map -> odom：单位静态 TF
 ```
 
 - 局部 EKF 只融合 FAST-LIO 的平面 `x/y/yaw`，输出连续的局部里程计；
 - 全局 EKF 将局部轨迹作为差分运动约束，并用 GPS 的绝对 `x/y/yaw` 校正漂移；
 - FAST-LIO 已经融合 IMU，本包不重复融合同一 IMU；
-- 局部 EKF 唯一发布 `odom -> base_footprint`，全局 EKF 唯一发布动态
-  `map -> odom`，不能再发布同名静态 TF。
+- `map -> odom` 固定为零平移、零旋转的单位静态 TF；
+- 完整融合启动时局部 EKF 不发布 TF，全局 EKF 唯一发布 GPS 修正后的
+  `odom -> base_footprint`，避免同名 TF 冲突。
 
 旧版 `navsat_transform`、Cartographer EKF、GPS 时间戳改写及失效测试脚本已经移除。
 
@@ -56,7 +58,7 @@ ros2 launch robot_ekf_localization gps_localization.launch.py \
   global_odom_topic:=/odometry/global
 ```
 
-不需要 TF 时可附加：
+不需要机器人位姿 TF 时可附加：
 
 ```text
 publish_local_tf:=false publish_global_tf:=false
@@ -85,7 +87,7 @@ ros2 launch robot_ekf_localization gps_localization.launch.py use_sim_time:=fals
 ## 配置
 
 - `config/ekf_local.yaml`：局部 EKF，`world_frame=odom`；
-- `config/ekf_global.yaml`：全局 EKF，`world_frame=map`。
+- `config/ekf_global.yaml`：全局 EKF，`world_frame=odom`。
 
 全局 EKF 的 GPS 输入必须满足：
 
@@ -93,7 +95,9 @@ ros2 launch robot_ekf_localization gps_localization.launch.py use_sim_time:=fals
 /odometry/gps.header.frame_id == map
 ```
 
-否则可能形成 `map -> odom` 观测反馈环。
+启动文件提供单位静态 `map -> odom`，因此 GPS 观测会无偏移地转换到
+`odom`。GPS 转换节点与 FAST-LIO 都会把启动位姿初始化为原点，从而共享
+同一位置起点和朝向。
 
 ## 验证与调参
 

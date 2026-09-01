@@ -1,4 +1,4 @@
-### FAST_LIO + GPS global EKF (map frame) ###
+### FAST_LIO + GPS global EKF (fixed map == odom origin) ###
 ekf_filter_node_global:
   ros__parameters:
     frequency: 30.0
@@ -9,6 +9,8 @@ ekf_filter_node_global:
     transform_timeout: 0.2
     print_diagnostics: true
     debug: false
+    # world_frame=odom时，本节点发布融合后的odom->base_footprint。
+    # map->odom由launch中的单位静态TF提供，不由EKF动态修正。
     publish_tf: true
     publish_acceleration: false
     predict_to_current_time: true
@@ -17,7 +19,8 @@ ekf_filter_node_global:
     map_frame: map
     odom_frame: odom
     base_link_frame: base_footprint
-    world_frame: map
+    # 强制全局融合结果留在odom；map与odom通过单位静态TF永久重合。
+    world_frame: odom
 
     # 局部EKF轨迹作为差分运动约束，避免漂移的位置和GPS绝对位置直接竞争。
     odom0: /odometry/local
@@ -32,8 +35,7 @@ ekf_filter_node_global:
     odom0_relative: false
     odom0_pose_rejection_threshold: 10.0
 
-    # GPS里程计必须直接位于map坐标系，不能标成odom后再经本节点发布的
-    # map->odom转换，否则会形成观测反馈环。
+    # GPS里程计仍位于map坐标系；单位静态map->odom会将其无偏移地转换到odom。
     odom1: /odometry/gps
     odom1_config: [true,  true,  false,
                    false, false, true,
@@ -46,7 +48,7 @@ ekf_filter_node_global:
     odom1_relative: false
     odom1_pose_rejection_threshold: 5.0
 
-    # 默认不重放历史GPS，避免延迟观测反复修订当前map->odom。
+    # 默认不重放历史GPS，避免延迟观测反复修订当前融合位姿。
     # 确认接收机存在固定延迟时，再启用并按实际延迟设置history_length。
     smooth_lagged_data: false
     history_length: 0.0
