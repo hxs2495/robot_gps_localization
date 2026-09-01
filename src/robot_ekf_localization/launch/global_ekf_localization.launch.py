@@ -26,7 +26,7 @@ def generate_launch_description():
             {
                 "use_sim_time": LaunchConfiguration("use_sim_time"),
                 "odom0": LaunchConfiguration("local_odom_topic"),
-                "odom1": LaunchConfiguration("gps_odom_topic"),
+                "odom1": LaunchConfiguration("smoothed_gps_odom_topic"),
                 "publish_tf": LaunchConfiguration("publish_tf"),
             },
         ],
@@ -35,20 +35,21 @@ def generate_launch_description():
         ],
     )
 
-    static_map_to_odom = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="static_map_to_odom",
+    gps_recovery_smoother = Node(
+        package="robot_ekf_localization",
+        executable="gps_recovery_smoother_node",
+        name="gps_recovery_smoother",
         output="screen",
-        arguments=[
-            "--x", "0.0",
-            "--y", "0.0",
-            "--z", "0.0",
-            "--roll", "0.0",
-            "--pitch", "0.0",
-            "--yaw", "0.0",
-            "--frame-id", "map",
-            "--child-frame-id", "odom",
+        parameters=[
+            LaunchConfiguration("config_file"),
+            {
+                "use_sim_time": LaunchConfiguration("use_sim_time"),
+                "raw_gps_topic": LaunchConfiguration("gps_odom_topic"),
+                "local_odom_topic": LaunchConfiguration("local_odom_topic"),
+                "output_topic": LaunchConfiguration(
+                    "smoothed_gps_odom_topic"
+                ),
+            },
         ],
     )
 
@@ -75,22 +76,27 @@ def generate_launch_description():
                 description="map坐标系中的GPS绝对里程计输入",
             ),
             DeclareLaunchArgument(
+                "smoothed_gps_odom_topic",
+                default_value="/odometry/gps/smoothed",
+                description="GPS消失/恢复状态机输出的绝对观测",
+            ),
+            DeclareLaunchArgument(
                 "global_odom_topic",
                 default_value="/odometry/global",
-                description="odom坐标系中的全局融合里程计输出",
+                description="map坐标系中的全局融合里程计输出",
             ),
             DeclareLaunchArgument(
                 "publish_tf",
                 default_value="true",
-                description="由全局EKF发布GPS修正后的odom->base_footprint",
+                description="由全局EKF动态发布GPS修正后的map->odom",
             ),
             LogInfo(
                 msg=(
-                    "全局EKF要求 /odometry/gps.header.frame_id=map，"
-                    "map->odom固定为单位静态变换；请勿再发布同名TF"
+                    "全局EKF要求GPS位于map；启动前必须已有局部EKF发布"
+                    "odom->base_footprint，且请勿再发布其他map->odom"
                 )
             ),
-            static_map_to_odom,
+            gps_recovery_smoother,
             global_ekf,
         ]
     )

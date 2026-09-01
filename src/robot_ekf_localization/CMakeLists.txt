@@ -10,6 +10,12 @@ install(
   PATTERN "*.pyc" EXCLUDE
 )
 
+install(
+  PROGRAMS scripts/gps_recovery_smoother_node.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME gps_recovery_smoother_node
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # The package has not declared a license/owner yet; do not invent legal metadata.

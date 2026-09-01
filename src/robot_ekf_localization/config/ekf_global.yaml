@@ -1,73 +1,109 @@
-### FAST_LIO + GPS global EKF (fixed map == odom origin) ###
-ekf_filter_node_global:
-  ros__parameters:
-    frequency: 30.0
-    sensor_timeout: 0.5
-    two_d_mode: true
+### FAST_LIO + GPS 全局EKF（动态维护map到odom）###
+ekf_filter_node_global:  # 全局robot_localization EKF节点名，必须与launch中的name一致。
+  ros__parameters:  # ROS 2参数区；以下参数仅加载到全局EKF节点。
+    frequency: 30.0  # EKF预测和输出频率(Hz)；增大响应更及时但CPU占用更高。
+    sensor_timeout: 0.5  # 任一传感器超过此时长(s)未更新即按超时处理；过小易误判低频GPS。
+    two_d_mode: true  # true时强制z/横滚/俯仰及其速度为0，适合平面移动机器人。
 
-    transform_time_offset: 0.0
-    transform_timeout: 0.2
-    print_diagnostics: true
-    debug: false
-    # world_frame=odom时，本节点发布融合后的odom->base_footprint。
-    # map->odom由launch中的单位静态TF提供，不由EKF动态修正。
-    publish_tf: true
-    publish_acceleration: false
-    predict_to_current_time: true
-    reset_on_time_jump: true
+    transform_time_offset: 0.0  # TF发布时间戳偏移(s)；正值向未来发布，通常保持0。
+    transform_timeout: 0.2  # 等待所需TF的最长时间(s)；增大可容忍TF延迟但会增加阻塞。
+    print_diagnostics: true  # true时发布诊断信息，便于检查传感器超时、拒绝和配置错误。
+    debug: false  # true时输出大量滤波调试数据，排障时短时启用，正常运行应关闭。
+    # world_frame=map时，本节点根据全局状态与局部odom->base_footprint动态计算map->odom。
+    publish_tf: true  # true时由全局EKF发布动态map->odom；不得再发布静态或其他同名TF。
+    publish_acceleration: false  # true时额外发布加速度状态；当前没有消费者，关闭可减少输出。
+    predict_to_current_time: true  # true时将最后状态预测到当前ROS时间，可减少输出滞后。
+    reset_on_time_jump: true  # 仿真时间向后跳变（如rosbag循环）时自动重置滤波器。
 
-    map_frame: map
-    odom_frame: odom
-    base_link_frame: base_footprint
-    # 强制全局融合结果留在odom；map与odom通过单位静态TF永久重合。
-    world_frame: odom
+    map_frame: map  # GPS约束下的全局坐标系；允许通过map->odom修正局部累计漂移。
+    odom_frame: odom  # 局部连续坐标系；由局部EKF发布odom->base_footprint。
+    base_link_frame: base_footprint  # 被估计的机器人基座坐标系，应与输入里程计child_frame_id一致。
+    # 全局EKF必须工作在map，robot_localization才会动态发布map->odom修正关系。
+    world_frame: map  # EKF输出所在坐标系；设为map后输出/map定位并维护map->odom。
 
-    # 局部EKF轨迹作为差分运动约束，避免漂移的位置和GPS绝对位置直接竞争。
-    odom0: /odometry/local
-    odom0_config: [true,  true,  false,
-                   false, false, true,
-                   false, false, false,
-                   false, false, false,
-                   false, false, false]
-    odom0_queue_size: 30
-    odom0_nodelay: true
-    odom0_differential: true
-    odom0_relative: false
-    odom0_pose_rejection_threshold: 10.0
+    # 局部EKF提供x/y/yaw相邻帧位姿增量；GPS失效时全局轨迹直接沿局部定位轨迹继续运动。
+    odom0: /odometry/local  # 第一路输入：局部EKF里程计话题；改话题名时需同步修改launch。
+    # 顺序为[x,y,z,roll,pitch,yaw,vx,vy,vz,vroll,vpitch,vyaw,ax,ay,az]。
+    odom0_config: [  # 选择局部位姿x/y/yaw，配合differential转换为相邻帧运动增量。
+      true,  true,  false,
+      false, false, true,
+      false, false, false,
+      false, false, false,
+      false, false, false
+    ]
+    odom0_queue_size: 30  # 局部里程计订阅队列长度；增大可抗短时阻塞但会积累旧数据。
+    odom0_nodelay: true  # true时启用TCP_NODELAY以降低ROS 2底层传输延迟，小消息高频输入建议开启。
+    odom0_differential: true  # true把局部绝对位姿转换成帧间增量，避免局部原点与GPS绝对位置竞争。
+    odom0_relative: false  # differential已负责提取位姿增量，不再额外将第一帧设为相对零点。
+    odom0_pose_rejection_threshold: 10.0  # 局部位姿增量马氏拒绝阈值；减小会更严格拒绝跳变。
 
-    # GPS里程计仍位于map坐标系；单位静态map->odom会将其无偏移地转换到odom。
-    odom1: /odometry/gps
-    odom1_config: [true,  true,  false,
-                   false, false, true,
-                   false, false, false,
-                   false, false, false,
-                   false, false, false]
-    odom1_queue_size: 10
-    odom1_nodelay: true
-    odom1_differential: false
-    odom1_relative: false
-    odom1_pose_rejection_threshold: 5.0
+    # GPS里程计位于map坐标系，作为低频、高置信度的全局绝对位置修正。
+    odom1: /odometry/gps/smoothed  # 第二路输入：经过消失/恢复状态机处理的GPS里程计。
+    # 顺序同odom0_config：[x,y,z,roll,pitch,yaw,vx,vy,vz,vroll,vpitch,vyaw,ax,ay,az]。
+    odom1_config: [  # 仅融合平滑GPS的x/y/yaw；z/横滚/俯仰由二维模式约束。
+      true,  true,  false,
+      false, false, true,
+      false, false, false,
+      false, false, false,
+      false, false, false
+    ]
+    odom1_queue_size: 10  # 平滑GPS订阅队列长度；通常覆盖数帧即可，过大可能处理过期GPS。
+    odom1_nodelay: true  # true时降低GPS观测传输等待；对实时恢复切换更有利。
+    odom1_differential: false  # true只融合GPS相邻帧增量；设false才会利用GPS绝对位置锚定长期漂移。
+    odom1_relative: false  # true会把首帧GPS当相对零点；全局绝对观测通常应保持false。
+    # GPS恢复阶段已由下方平滑器低通和限速；放宽二次拒绝，避免恢复校正被EKF误拒。
+    odom1_pose_rejection_threshold: 100.0  # 平滑GPS马氏拒绝阈值；减小可拒绝更多异常，但过小会阻断恢复。
 
     # 默认不重放历史GPS，避免延迟观测反复修订当前融合位姿。
     # 确认接收机存在固定延迟时，再启用并按实际延迟设置history_length。
-    smooth_lagged_data: false
-    history_length: 0.0
-    use_control: false
+    smooth_lagged_data: false  # true允许迟到观测回滚并重放历史；会增加计算且可能反复修订当前位姿。
+    history_length: 0.0  # 历史状态缓存时长(s)，仅smooth_lagged_data=true时生效且应覆盖传感器延迟。
+    use_control: false  # true时融合控制指令做预测；当前仅依赖里程计/GPS，因此关闭。
 
-    process_noise_covariance: [
-      0.08, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.08, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.15, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.15, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.05, 0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.10, 0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.10, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.05
-    ]
+    # 15×15过程噪声矩阵，状态顺序为x,y,z,roll,pitch,yaw,vx,vy,vz,
+    # vroll,vpitch,vyaw,ax,ay,az；对角值增大时更相信新观测、响应更快但更抖。
+    process_noise_covariance: [  # 非对角项为0，表示不显式设置不同状态间的过程噪声相关性。
+      0.08, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # x位置；增大可加快x方向位置校正。
+      0.0,  0.08, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # y位置；增大可加快y方向位置校正。
+      0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # z位置；二维模式下基本不参与估计。
+      0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # roll；二维模式下横滚被约束为0。
+      0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # pitch；二维模式下俯仰被约束为0。
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # yaw；增大转向响应更快，减小航向更平滑。
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.15, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # vx；增大允许x方向速度更快变化。
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.15, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # vy；增大允许y方向速度更快变化。
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # vz；二维模式下垂直速度被约束为0。
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  # 横滚角速度；二维模式下基本不生效。
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  # 俯仰角速度；二维模式下基本不生效。
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.05, 0.0,  0.0,  0.0,  # yaw角速度；增大可更快跟随转弯变化。
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.10, 0.0,  0.0,  # x加速度；增大允许纵向加速度变化更剧烈。
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.10, 0.0,  # y加速度；增大允许横向加速度变化更剧烈。
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.05   # z加速度；二维模式下基本不生效。
+    ]  # 必须保持225个元素；修改时通常只调整上述15个对角值。
+
+# GPS消失/恢复状态机。输出经过连续性约束的GPS观测，再送入全局EKF。
+gps_recovery_smoother:  # GPS可用性状态机节点名，必须与launch中的name一致。
+  ros__parameters:  # 控制GPS超时停用、局部外推以及GPS恢复平滑重新锚定。
+    raw_gps_topic: /odometry/gps  # 原始GPS里程计输入话题，要求位姿有效且frame_id通常为map。
+    local_odom_topic: /odometry/local  # 局部EKF输入话题，用于时间对齐及GPS失效后的轨迹参考。
+    output_topic: /odometry/gps/smoothed  # 平滑观测输出话题，必须与全局EKF的odom1保持一致。
+    output_frame_id: map  # 平滑GPS绝对观测的父坐标系；必须与全局EKF的map_frame一致。
+
+    # 超过该时间没有有效GPS即停止绝对观测，由odom0局部位姿增量贴合局部轨迹。
+    gps_timeout: 1.0  # GPS无有效数据超过此时长(s)即判定丢失；应大于GPS正常发布周期。
+    # GPS首次出现或丢失后恢复时，从当前局部延伸位置平滑靠近GPS所需时间。
+    recovery_duration: 5.0  # GPS恢复后重新贴向GPS的计划时长(s)；减小恢复更快但变化更明显。
+    # 恢复过渡期间对GPS相对局部里程计校正量的低通时间常数；稳定跟踪后不再低通GPS。
+    correction_time_constant: 0.5  # 恢复目标低通时间常数(s)；增大恢复更抗抖，但到达GPS更慢。
+    # 恢复起点放大GPS协方差，随后随恢复进度平滑下降到原始协方差。
+    recovery_covariance_scale: 10.0  # 恢复首帧GPS协方差倍率；增大初期更信局部，随后平滑降至1倍。
+    # 稳定跟踪时直接输出原始GPS位姿，并缩小协方差，使全局EKF以GPS为强绝对约束。
+    tracking_covariance_scale: 0.01  # 原始GPS协方差倍率；越小越贴合GPS，但也会完整保留GPS抖动。
+    tracking_covariance_ramp_duration: 1.0  # 进入强跟踪后权重渐强时长(s)；增大可减小EKF内部残差突变。
+    # 限制GPS恢复阶段校正量变化速度；设为0表示不限速。
+    max_translation_correction_rate: 1.0  # 位置校正最大速度(m/s)；减小更平滑，0表示不限制。
+    max_yaw_correction_rate: 0.35  # 航向校正最大速度(rad/s)；减小转向更平滑，0表示不限制。
+    # 恢复达到计划时长后，还需低于以下误差门限才切换到逐帧原始GPS，避免切换瞬间跳变。
+    tracking_position_tolerance: 0.05  # 进入GPS强跟踪允许的最大位置残差(m)；越小切换越平顺但可能更慢。
+    tracking_yaw_tolerance: 0.02  # 进入GPS强跟踪允许的最大航向残差(rad)；越小切换越平顺但可能更慢。
+    # GPS与最新局部里程计时间戳差值超过该值时拒绝该帧，避免错时融合。
+    max_local_time_offset: 0.5  # GPS与最近局部位姿允许的最大时间差(s)；减小更严格但更易丢帧。
