@@ -22,6 +22,8 @@ ekf_filter_node_global -> 动态 map -> odom TF
 ```
 
 - 局部 EKF 只融合 FAST-LIO 的平面 `x/y/yaw`，输出连续的局部里程计；
+- FAST-LIO 发布层启用 `publish.flatten_z` 后，原始里程计、轨迹和世界点云
+  与二维融合平面对齐；局部及全局 EKF 的 `two_d_mode` 继续保证输出 z=0；
 - 全局 EKF 将局部轨迹作为差分运动约束，并用 GPS 的绝对 `x/y/yaw` 校正漂移；
 - FAST-LIO 已经融合 IMU，本包不重复融合同一 IMU；
 - 局部 EKF 唯一发布连续的 `odom -> base_footprint`；

@@ -133,6 +133,9 @@ ekf_filter_node_global -> 动态 map -> odom TF
 - GPS 提供绝对 `x/y/yaw`，用于校正局部轨迹的长期漂移。
 - FAST_LIO 当前已关闭自身 TF 广播；局部 EKF 唯一发布连续的
   `odom -> base_footprint`。
+- FAST_LIO 的 `publish.flatten_z: true` 只压平发布层：`/Odometry` 和
+  `/fastlio_path` 的 z 固定为 0，世界坐标点云扣除当前垂直位移；内部三维
+  状态和地图匹配仍保留真实坡度信息。
 - 全局 EKF 在 `world_frame=map` 下动态发布 GPS 修正后的 `map -> odom`；
   请勿启动静态或其他同名 TF 发布者。
 - GPS 超时后停止绝对观测，由局部差分继续外推；GPS 恢复后平滑重新锚定。

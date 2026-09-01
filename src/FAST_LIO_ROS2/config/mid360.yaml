@@ -45,6 +45,7 @@
             scan_publish_en:  true       # false: close all the point cloud output
             dense_publish_en: false      # false: low down the points number in a global-frame point clouds scan.
             scan_bodyframe_pub_en: true  # true: output the point cloud scans in IMU-body-frame
+            flatten_z: true              # true: published odometry/path use z=0 and world clouds remove vertical trajectory drift
 
         pcd_save:
             pcd_save_en: true
