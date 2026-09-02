@@ -1,0 +1,99 @@
+<?xml version="1.0"?>
+<robot name="robot_gps_localization">
+
+  <!--
+    Coordinate convention (REP-103):
+      x forward, y left, z up.
+
+    The FAST-LIO pose is state_point.pos, i.e. the Livox IMU origin, although
+    the published child frame is named base_footprint. To keep every odometry
+    source referenced to the same physical point, base_footprint and base_link
+    are therefore colocated with that IMU origin in this model.
+
+    Calibration sources:
+      * base_link -> livox_frame: FAST-LIO mid360.yaml extrinsic_T/R.
+      * base_link -> gps: planar trajectory fit using all-data-8-23-4.
+
+    The bag does not observably constrain the GPS-to-IMU height, so gps z is
+    intentionally zero here. Replace it with a measured value when available.
+  -->
+
+  <material name="base_blue">
+    <color rgba="0.1 0.1 1.0 0.5"/>
+  </material>
+  <material name="livox_gray">
+    <color rgba="0.25 0.25 0.25 1.0"/>
+  </material>
+  <material name="gps_green">
+    <color rgba="0.1 0.8 0.1 1.0"/>
+  </material>
+
+  <!-- FAST-LIO/Livox-IMU planar reference point. -->
+  <link name="base_footprint"/>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder length="0.12" radius="0.10"/>
+      </geometry>
+      <material name="base_blue"/>
+    </visual>
+  </link>
+
+  <joint name="base_footprint_to_base_link" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!--
+    Livox LiDAR optical frame. FAST-LIO extrinsic_T is the LiDAR origin
+    expressed in the IMU/body frame; extrinsic_R is identity.
+  -->
+  <link name="livox_frame">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.06 0.06 0.06"/>
+      </geometry>
+      <material name="livox_gray"/>
+    </visual>
+  </link>
+
+  <joint name="base_link_to_livox_frame" type="fixed">
+    <parent link="base_link"/>
+    <child link="livox_frame"/>
+    <origin xyz="-0.011000 -0.023290 0.044120" rpy="0 0 0"/>
+  </joint>
+
+  <!--
+    GPS antenna frame.
+
+    all-data-8-23-4 estimates the antenna position relative to the FAST-LIO
+    reference point as approximately [-1.193227, -0.405604] m in body axes.
+    The +90 degree yaw is required by the recorded /imu_orientation convention:
+    gps_to_utm uses yaw=(pi/2-raw_yaw), followed by T_gps_base yaw=-pi/2.
+
+    This joint is the inverse of the fitted planar T_gps_base:
+      T_gps_base: xyz=[0.405604, -1.193227, 0], yaw=-pi/2.
+  -->
+  <link name="gps">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder length="0.04" radius="0.08"/>
+      </geometry>
+      <material name="gps_green"/>
+    </visual>
+  </link>
+
+  <joint name="base_link_to_gps" type="fixed">
+    <parent link="base_link"/>
+    <child link="gps"/>
+    <origin
+      xyz="-1.193227 -0.405604 0.000000"
+      rpy="0 0 1.5707963267948966"/>
+  </joint>
+
+</robot>
