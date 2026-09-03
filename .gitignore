@@ -19,8 +19,6 @@ cmake_install.cmake
 Makefile
 *.o
 *.obj
-*.png
-*.assets
 *.pdf
 *.gif
 *.jpg
