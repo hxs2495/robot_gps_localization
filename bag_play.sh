@@ -2,11 +2,13 @@
 
 # GPS定位bag回放脚本（带时钟同步）
 # 关键参数：--clock 发布/clock话题实现时间同步
+set -e
 
 # 颜色定义
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${BLUE}========================================${NC}"
@@ -20,7 +22,10 @@ echo ""
 
 source install/setup.bash
 
-BAG_FILE="robot_data/all-data-8-23-4/"
+BAG_FILE="${1:-robot_data/all-data-8-23-4/}"
+if [ "$#" -gt 0 ]; then
+    shift
+fi
 
 if [ ! -d "$BAG_FILE" ]; then
     echo -e "${RED}❌ 错误: bag文件不存在: $BAG_FILE${NC}"
@@ -34,7 +39,7 @@ echo -e "${YELLOW}提示: 使用Ctrl+C停止回放${NC}"
 echo ""
 
 # 关键：使用--clock参数回放，实现时间同步
-ros2 bag play "$BAG_FILE" --clock
+ros2 bag play "$BAG_FILE" --clock "$@"
 
 # 可选参数：
 # --rate 0.5    # 0.5倍速回放（慢速）

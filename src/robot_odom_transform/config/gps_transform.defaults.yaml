@@ -10,6 +10,8 @@ gps_to_utm_odometry_node:
     child_frame_id: gps
     # 航向用于把ENU/UTM轨迹旋转到机器人启动方向。
     use_orientation: true
+    # north_clockwise: 北向为0、顺时针为正；enu: REP-103东向为0、逆时针为正。
+    orientation_convention: north_clockwise
     # 航向固定零偏(rad)，在GPS杆臂补偿和map原点初始化之前加到ENU yaw。
     # all-data-8-23-4中同时刻轨迹刚体拟合得到GPS相对local多旋转约1.70°；
     # 加+1.70°会使建立的GPS map轴反向旋转1.70°，与local/odom轴对齐。

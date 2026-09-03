@@ -15,6 +15,7 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>robot_localization</exec_depend>
   <exec_depend>robot_description</exec_depend>
+  <exec_depend>robot_fusion_path</exec_depend>
   <exec_depend>robot_odom_transform</exec_depend>
   <exec_depend>fast_lio</exec_depend>
   <exec_depend>ros2bag</exec_depend>

@@ -20,6 +20,9 @@
 `gps_to_utm_odometry_node` 使用近似时间同步配对位置和航向，避免拿上一周期航向
 处理当前 GPS。`gps_global_odometry_node` 对 GPS 杆臂做完整刚体变换；通用里程计
 转换节点还会同步变换 twist、位姿协方差和速度协方差。
+航向消息可通过 `orientation_convention` 选择 `north_clockwise` 或
+REP-103 `enu`；固定航向零偏和测量时标补偿分别由
+`orientation_yaw_offset` 和 `measurement_time_offset` 配置。
 
 数学上，若传感器里程计为 `T_parent_sensor`，目标参考点由 TF 给出
 `T_sensor_base`，则输出为：

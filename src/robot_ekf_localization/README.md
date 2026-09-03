@@ -2,6 +2,7 @@
 
 该包将所有传感器观测先转换到同一个 `base_footprint`，再执行局部、全局双 EKF。
 滤波器不再假设 FAST-LIO 原点、GPS 天线和车体原点重合。
+完整话题接口、URDF 外参、启动参数和新车接入说明见仓库根目录 `README.md`。
 
 ## 融合链路
 
@@ -42,8 +43,8 @@ ros2 launch robot_ekf_localization localization_bringup.launch.py \
   use_sim_time:=false
 ```
 
-统一入口只启动一个 `robot_state_publisher`，依次纳入机器人模型、FAST-LIO、GPS
-转换和双 EKF。传感器安装改变时无需修改融合 YAML 或 C++。
+统一入口只启动一个 `robot_state_publisher`，纳入机器人模型、FAST-LIO、GPS
+转换、双 EKF 和 local/global Path。传感器安装改变时无需修改融合 YAML 或 C++。
 
 仍可独立启动局部或完整 EKF：
 

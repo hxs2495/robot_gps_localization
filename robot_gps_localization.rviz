@@ -5,6 +5,7 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
+        - /Grid1/Line Style1
         - /TF1/Frames1
         - /TF1/Tree1
       Splitter Ratio: 0.5764706134796143
@@ -95,7 +96,7 @@ Visualization Manager:
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 154
+      Max Intensity: 151
       Min Color: 0; 0; 0
       Min Intensity: 0
       Name: PointCloud2
@@ -140,7 +141,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /fastlio_path
+        Value: /local_path
       Value: true
     - Alpha: 1
       Buffer Length: 1
@@ -215,7 +216,7 @@ Visualization Manager:
           Scale: 1
           Value: true
         Value: false
-      Enabled: true
+      Enabled: false
       Keep: 10
       Name: Odometry
       Position Tolerance: 0.10000000149011612
@@ -236,7 +237,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /odometry/global
-      Value: true
+      Value: false
     - Angle Tolerance: 0.10000000149011612
       Class: rviz_default_plugins/Odometry
       Covariance:
@@ -353,25 +354,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 32.28061294555664
+      Distance: 121.83824157714844
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 2.073096752166748
-        Y: 2.775071859359741
-        Z: -9.94148063659668
+        X: 4.0124969482421875
+        Y: 45.07024383544922
+        Z: -28.124942779541016
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.4447964429855347
+      Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 2.965402126312256
+      Yaw: 3.1185896396636963
     Saved: ~
 Window Geometry:
   Displays:

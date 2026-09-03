@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# This script is used to launch the Fast LIO mapping node.
+# Standalone global EKF and GPS loss/recovery smoother.
+set -e
 
 source install/setup.bash
 
-ros2 launch robot_ekf_localization global_ekf_localization.launch.py
+ros2 launch robot_ekf_localization global_ekf_localization.launch.py "$@"

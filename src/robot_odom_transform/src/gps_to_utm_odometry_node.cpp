@@ -5,6 +5,7 @@
 #include <cmath>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include <GeographicLib/UTMUPS.hpp>
@@ -28,6 +29,7 @@ public:
     declare_parameter<std::string>("frame_id", "utm");
     declare_parameter<std::string>("child_frame_id", "gps");
     declare_parameter<bool>("use_orientation", true);
+    declare_parameter<std::string>("orientation_convention", "north_clockwise");
     declare_parameter<double>("orientation_yaw_offset", 0.0);
     declare_parameter<double>("measurement_time_offset", 0.0);
     declare_parameter<double>("orientation_variance", 0.04);
@@ -43,6 +45,11 @@ public:
     frame_id_ = get_parameter("frame_id").as_string();
     child_frame_id_ = get_parameter("child_frame_id").as_string();
     use_orientation_ = get_parameter("use_orientation").as_bool();
+    orientation_convention_ = get_parameter("orientation_convention").as_string();
+    if (orientation_convention_ != "north_clockwise" && orientation_convention_ != "enu") {
+      throw std::invalid_argument(
+              "orientation_convention必须为north_clockwise或enu");
+    }
     orientation_yaw_offset_ = get_parameter("orientation_yaw_offset").as_double();
     measurement_time_offset_ = get_parameter("measurement_time_offset").as_double();
     orientation_variance_ = std::max(
@@ -81,10 +88,11 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "GPS转UTM节点已启动: %s -> %s, 航向=%s, yaw零偏=%.6f rad, 时标补偿=%+.3f s",
+      "GPS转UTM节点已启动: %s -> %s, 航向=%s, 约定=%s, "
+      "yaw零偏=%.6f rad, 时标补偿=%+.3f s",
       gps_topic.c_str(), odom_topic.c_str(),
       use_orientation_ ? orientation_topic.c_str() : "关闭",
-      orientation_yaw_offset_, measurement_time_offset_);
+      orientation_convention_.c_str(), orientation_yaw_offset_, measurement_time_offset_);
   }
 
 private:
@@ -113,10 +121,12 @@ private:
     double roll = 0.0;
     tf2::Matrix3x3(orientation).getEulerYPR(yaw, pitch, roll);
 
-    // 输入航向沿用原链路约定：转换为ENU中从东向北逆时针的yaw。
+    // 先按消息源的航向约定转换为REP-103 ENU yaw。
     // orientation_yaw_offset用于补偿航向接收机的固定零偏。它必须在
     // GPS杆臂补偿和全局原点初始化之前施加，否则只旋转Path会破坏位姿一致性。
-    yaw_ = normalize_angle(M_PI_2 - yaw + orientation_yaw_offset_);
+    const double enu_yaw =
+      orientation_convention_ == "enu" ? yaw : M_PI_2 - yaw;
+    yaw_ = normalize_angle(enu_yaw + orientation_yaw_offset_);
 
     const double message_variance = msg->orientation_covariance[8];
     last_orientation_variance_ =
@@ -227,6 +237,7 @@ private:
   std::string child_frame_id_;
   bool use_orientation_{true};
   bool has_orientation_{false};
+  std::string orientation_convention_{"north_clockwise"};
   double yaw_{0.0};
   double orientation_yaw_offset_{0.0};
   double measurement_time_offset_{0.0};
