@@ -91,7 +91,9 @@
     all-data-8-23-4 estimates the antenna position relative to the FAST-LIO
     reference point as approximately [-1.193227, -0.405604] m in body axes.
     The +90 degree yaw is required by the recorded /imu_orientation convention:
-    gps_to_utm uses yaw=(pi/2-raw_yaw), followed by T_gps_base yaw=-pi/2.
+    gps_to_utm uses yaw=(pi/2-raw_yaw+yaw_offset), followed by
+    T_gps_base yaw=-pi/2. The receiver yaw offset is a runtime calibration in
+    gps_transform.defaults.yaml, not a rigid sensor mounting transform.
 
     This joint is the inverse of the fitted planar T_gps_base:
       T_gps_base: xyz=[0.405604, -1.193227, 0], yaw=-pi/2.

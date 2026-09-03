@@ -28,6 +28,8 @@ public:
     declare_parameter<std::string>("frame_id", "utm");
     declare_parameter<std::string>("child_frame_id", "gps");
     declare_parameter<bool>("use_orientation", true);
+    declare_parameter<double>("orientation_yaw_offset", 0.0);
+    declare_parameter<double>("measurement_time_offset", 0.0);
     declare_parameter<double>("orientation_variance", 0.04);
     declare_parameter<double>("unobserved_orientation_variance", 1.0e6);
     declare_parameter<double>("position_variance_floor", 0.01);
@@ -41,6 +43,8 @@ public:
     frame_id_ = get_parameter("frame_id").as_string();
     child_frame_id_ = get_parameter("child_frame_id").as_string();
     use_orientation_ = get_parameter("use_orientation").as_bool();
+    orientation_yaw_offset_ = get_parameter("orientation_yaw_offset").as_double();
+    measurement_time_offset_ = get_parameter("measurement_time_offset").as_double();
     orientation_variance_ = std::max(
       0.0, get_parameter("orientation_variance").as_double());
     unobserved_orientation_variance_ = std::max(
@@ -76,8 +80,11 @@ public:
     odometry_pub_ = create_publisher<nav_msgs::msg::Odometry>(odom_topic, 10);
 
     RCLCPP_INFO(
-      get_logger(), "GPS转UTM节点已启动: %s -> %s, 航向=%s",
-      gps_topic.c_str(), odom_topic.c_str(), use_orientation_ ? orientation_topic.c_str() : "关闭");
+      get_logger(),
+      "GPS转UTM节点已启动: %s -> %s, 航向=%s, yaw零偏=%.6f rad, 时标补偿=%+.3f s",
+      gps_topic.c_str(), odom_topic.c_str(),
+      use_orientation_ ? orientation_topic.c_str() : "关闭",
+      orientation_yaw_offset_, measurement_time_offset_);
   }
 
 private:
@@ -107,10 +114,9 @@ private:
     tf2::Matrix3x3(orientation).getEulerYPR(yaw, pitch, roll);
 
     // 输入航向沿用原链路约定：转换为ENU中从东向北逆时针的yaw。
-    yaw_ = M_PI_2 - yaw;
-    if (yaw_ > M_PI) {
-      yaw_ -= 2.0 * M_PI;
-    }
+    // orientation_yaw_offset用于补偿航向接收机的固定零偏。它必须在
+    // GPS杆臂补偿和全局原点初始化之前施加，否则只旋转Path会破坏位姿一致性。
+    yaw_ = normalize_angle(M_PI_2 - yaw + orientation_yaw_offset_);
 
     const double message_variance = msg->orientation_covariance[8];
     last_orientation_variance_ =
@@ -137,6 +143,11 @@ private:
 
       nav_msgs::msg::Odometry output;
       output.header = msg->header;
+      if (measurement_time_offset_ != 0.0) {
+        const rclcpp::Time corrected_stamp(msg->header.stamp);
+        output.header.stamp =
+          corrected_stamp + rclcpp::Duration::from_seconds(measurement_time_offset_);
+      }
       output.header.frame_id = frame_id_;
       output.child_frame_id = child_frame_id_;
       output.pose.pose.position.x = easting;
@@ -155,6 +166,11 @@ private:
     } catch (const std::exception & error) {
       RCLCPP_ERROR(get_logger(), "UTM转换失败: %s", error.what());
     }
+  }
+
+  static double normalize_angle(double angle)
+  {
+    return std::atan2(std::sin(angle), std::cos(angle));
   }
 
   void fill_pose_covariance(
@@ -212,6 +228,8 @@ private:
   bool use_orientation_{true};
   bool has_orientation_{false};
   double yaw_{0.0};
+  double orientation_yaw_offset_{0.0};
+  double measurement_time_offset_{0.0};
   double orientation_variance_{0.04};
   double last_orientation_variance_{0.04};
   double unobserved_orientation_variance_{1.0e6};

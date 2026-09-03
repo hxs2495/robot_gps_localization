@@ -10,6 +10,13 @@ gps_to_utm_odometry_node:
     child_frame_id: gps
     # 航向用于把ENU/UTM轨迹旋转到机器人启动方向。
     use_orientation: true
+    # 航向固定零偏(rad)，在GPS杆臂补偿和map原点初始化之前加到ENU yaw。
+    # all-data-8-23-4中同时刻轨迹刚体拟合得到GPS相对local多旋转约1.70°；
+    # 加+1.70°会使建立的GPS map轴反向旋转1.70°，与local/odom轴对齐。
+    orientation_yaw_offset: 0.0297
+    # GPS测量物理时刻相对header.stamp的补偿(s)；正值把输出时标向后移。
+    # 回放拟合中GPS位置与FAST-LIO最佳对齐约为+0.08s，可减小转弯段横向残差。
+    measurement_time_offset: 0.08
     # 航向消息未提供有效orientation_covariance[8]时的yaw方差(rad^2)。
     orientation_variance: 0.04
     unobserved_orientation_variance: 1000000.0

@@ -73,6 +73,16 @@ livox_imu -> livox_frame:
 原始轨迹无法可靠观测 GPS 高度，所以 GPS 的 z 暂为 0；应优先用结构尺寸或专门
 外参标定替换它。平面轨迹拟合值也应视为当前数据的估计初值，而不是机械测量真值。
 
+`gps_transform.defaults.yaml` 还包含两个不属于 URDF 的时空标定量：
+
+```text
+orientation_yaw_offset = +0.0297 rad  # 航向接收机固定零偏
+measurement_time_offset = +0.08 s    # GPS位置物理时刻补偿
+```
+
+它们由 `all-data-8-23-4` 中 GPS 与 FAST-LIO 的同时刻平面轨迹拟合得到。
+换 GNSS/航向接收机后应重新标定，不要把它们并入 GPS 天线的 URDF 机械外参。
+
 适配另一台车时只需：
 
 1. 按 REP-103（x 前、y 左、z 上）定义 `base_footprint`；
