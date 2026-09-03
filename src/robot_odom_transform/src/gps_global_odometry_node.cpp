@@ -1,7 +1,9 @@
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Transform.h>
+#include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/transform_listener.h>
 
 #include <algorithm>
 #include <array>
@@ -54,15 +56,7 @@ public:
     declare_parameter<bool>("publish_path", true);
     declare_parameter<double>("path_min_distance", 0.05);
     declare_parameter<int>("path_max_points", 10000);
-
-    // T_gps_base: GPS天线坐标系到机器人基座坐标系的标定外参。
-    declare_parameter<double>("gps_to_base.x", 0.726732);
-    declare_parameter<double>("gps_to_base.y", -0.109451);
-    declare_parameter<double>("gps_to_base.z", 0.0);
-    declare_parameter<double>("gps_to_base.qx", 0.00259991);
-    declare_parameter<double>("gps_to_base.qy", 0.00764529);
-    declare_parameter<double>("gps_to_base.qz", -0.257884);
-    declare_parameter<double>("gps_to_base.qw", 0.966142);
+    declare_parameter<double>("transform_timeout", 0.2);
 
     input_odom_topic_ = get_parameter("input_odom_topic").as_string();
     output_odom_topic_ = get_parameter("output_odom_topic").as_string();
@@ -76,25 +70,14 @@ public:
     path_min_distance_ = std::max(0.0, get_parameter("path_min_distance").as_double());
     path_max_points_ =
       std::max(0, static_cast<int>(get_parameter("path_max_points").as_int()));
+    transform_timeout_ =
+      std::max(0.0, get_parameter("transform_timeout").as_double());
 
-    tf2::Quaternion gps_to_base_rotation(
-      get_parameter("gps_to_base.qx").as_double(),
-      get_parameter("gps_to_base.qy").as_double(),
-      get_parameter("gps_to_base.qz").as_double(),
-      get_parameter("gps_to_base.qw").as_double());
-    if (gps_to_base_rotation.length2() < 1.0e-12) {
-      RCLCPP_WARN(
-        get_logger(), "gps_to_base四元数无效，已回退为单位旋转");
-      gps_to_base_rotation.setRPY(0.0, 0.0, 0.0);
-    } else {
-      gps_to_base_rotation.normalize();
-    }
-    gps_to_base_ = tf2::Transform(
-      gps_to_base_rotation,
-      tf2::Vector3(
-        get_parameter("gps_to_base.x").as_double(),
-        get_parameter("gps_to_base.y").as_double(),
-        get_parameter("gps_to_base.z").as_double()));
+    // This buffer is used only for time-invariant URDF extrinsics. A steady
+    // clock prevents rosbag /clock jumps from clearing those static TFs.
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(
+      std::make_shared<rclcpp::Clock>(RCL_STEADY_TIME));
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     odom_pub_ = create_publisher<nav_msgs::msg::Odometry>(output_odom_topic_, 10);
     if (publish_path_) {
@@ -122,12 +105,8 @@ public:
         path_max_points_ == 0 ? "（不限制）" : "");
     }
     RCLCPP_INFO(
-      get_logger(),
-      "使用T_gps_base标定: xyz=[%.6f, %.6f, %.6f], xyzw=[%.6f, %.6f, %.6f, %.6f]",
-      gps_to_base_.getOrigin().x(), gps_to_base_.getOrigin().y(),
-      gps_to_base_.getOrigin().z(), gps_to_base_.getRotation().x(),
-      gps_to_base_.getRotation().y(), gps_to_base_.getRotation().z(),
-      gps_to_base_.getRotation().w());
+      get_logger(), "GPS杆臂外参由URDF/TF提供: 输入child frame -> %s",
+      child_frame_id_.c_str());
   }
 
 private:
@@ -149,9 +128,35 @@ private:
       return;
     }
 
-    // 输入是T_utm_gps，应用标定后得到GPS观测下的机器人基座位姿T_utm_base。
+    const std::string gps_frame = msg->child_frame_id;
+    if (gps_frame.empty()) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 3000, "UTM里程计child_frame_id为空，无法查询杆臂TF");
+      return;
+    }
+
+    tf2::Transform gps_to_base;
+    if (gps_frame == child_frame_id_) {
+      gps_to_base.setIdentity();
+    } else {
+      try {
+        // lookupTransform(target=gps, source=base) returns T_gps_base.
+        const auto transform = tf_buffer_->lookupTransform(
+          gps_frame, child_frame_id_, tf2::TimePointZero,
+          tf2::durationFromSec(transform_timeout_));
+        tf2::fromMsg(transform.transform, gps_to_base);
+      } catch (const tf2::TransformException & error) {
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 3000,
+          "等待URDF静态TF %s <- %s: %s",
+          gps_frame.c_str(), child_frame_id_.c_str(), error.what());
+        return;
+      }
+    }
+
+    // 输入是T_utm_gps，通过TF得到GPS观测下同一融合参考点T_utm_base。
     const tf2::Transform utm_to_gps = pose_to_transform(msg->pose.pose);
-    const tf2::Transform utm_to_base = utm_to_gps * gps_to_base_;
+    const tf2::Transform utm_to_base = utm_to_gps * gps_to_base;
 
     if (!origin_initialized_) {
       collect_initial_pose(utm_to_base);
@@ -163,7 +168,7 @@ private:
       initialize_origin();
     }
 
-    publish_global_odometry(*msg, utm_to_base);
+    publish_global_odometry(*msg, utm_to_gps, gps_to_base, utm_to_base);
   }
 
   void collect_initial_pose(const tf2::Transform & utm_to_base)
@@ -203,7 +208,10 @@ private:
   }
 
   void publish_global_odometry(
-    const nav_msgs::msg::Odometry & input, const tf2::Transform & utm_to_base)
+    const nav_msgs::msg::Odometry & input,
+    const tf2::Transform & utm_to_gps,
+    const tf2::Transform & gps_to_base,
+    const tf2::Transform & utm_to_base)
   {
     tf2::Transform global_to_base = global_to_utm_ * utm_to_base;
     if (two_d_mode_) {
@@ -227,7 +235,9 @@ private:
     output.pose.pose.position.y = global_to_base.getOrigin().y();
     output.pose.pose.position.z = global_to_base.getOrigin().z();
     output.pose.pose.orientation = tf2::toMsg(global_to_base.getRotation());
-    rotate_pose_covariance(input.pose.covariance, output.pose.covariance);
+    transform_pose_covariance(
+      input.pose.covariance, output.pose.covariance,
+      utm_to_gps, gps_to_base);
     odom_pub_->publish(output);
     publish_path(output);
 
@@ -277,9 +287,31 @@ private:
     path_pub_->publish(gps_path_);
   }
 
-  void rotate_pose_covariance(
-    const std::array<double, 36> & input, std::array<double, 36> & output) const
+  void transform_pose_covariance(
+    const std::array<double, 36> & input,
+    std::array<double, 36> & output,
+    const tf2::Transform & utm_to_gps,
+    const tf2::Transform & gps_to_base) const
   {
+    // Right-multiplying the GPS pose by a fixed lever arm couples heading
+    // uncertainty into the position of the requested base reference point.
+    double lever_jacobian[6][6] = {};
+    for (int index = 0; index < 6; ++index) {
+      lever_jacobian[index][index] = 1.0;
+    }
+    const tf2::Vector3 lever_in_utm =
+      utm_to_gps.getBasis() * gps_to_base.getOrigin();
+    const double skew[3][3] = {
+      {0.0, -lever_in_utm.z(), lever_in_utm.y()},
+      {lever_in_utm.z(), 0.0, -lever_in_utm.x()},
+      {-lever_in_utm.y(), lever_in_utm.x(), 0.0},
+    };
+    for (int row = 0; row < 3; ++row) {
+      for (int column = 0; column < 3; ++column) {
+        lever_jacobian[row][column + 3] = -skew[row][column];
+      }
+    }
+
     tf2::Matrix3x3 rotation(global_to_utm_.getRotation());
     double rotation6[6][6] = {};
     for (int row = 0; row < 6; ++row) {
@@ -292,11 +324,22 @@ private:
       }
     }
 
+    double jacobian[6][6] = {};
+    for (int row = 0; row < 6; ++row) {
+      for (int column = 0; column < 6; ++column) {
+        for (int k = 0; k < 6; ++k) {
+          jacobian[row][column] +=
+            rotation6[row][k] * lever_jacobian[k][column];
+        }
+      }
+    }
+
     double intermediate[6][6] = {};
     for (int row = 0; row < 6; ++row) {
       for (int column = 0; column < 6; ++column) {
         for (int k = 0; k < 6; ++k) {
-          intermediate[row][column] += rotation6[row][k] * input[k * 6 + column];
+          intermediate[row][column] +=
+            jacobian[row][k] * input[k * 6 + column];
         }
       }
     }
@@ -304,7 +347,8 @@ private:
       for (int column = 0; column < 6; ++column) {
         output[row * 6 + column] = 0.0;
         for (int k = 0; k < 6; ++k) {
-          output[row * 6 + column] += intermediate[row][k] * rotation6[column][k];
+          output[row * 6 + column] +=
+            intermediate[row][k] * jacobian[column][k];
         }
       }
     }
@@ -314,6 +358,8 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
   std::string input_odom_topic_;
   std::string output_odom_topic_;
@@ -326,8 +372,8 @@ private:
   bool publish_path_{true};
   double path_min_distance_{0.05};
   int path_max_points_{10000};
+  double transform_timeout_{0.2};
 
-  tf2::Transform gps_to_base_;
   tf2::Transform global_to_utm_;
   nav_msgs::msg::Path gps_path_;
   int collected_count_{0};

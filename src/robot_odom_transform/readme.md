@@ -1,95 +1,70 @@
 # robot_odom_transform
 
-该包只保留 GPS 定位数据的核心转换链路：过滤 `NavSatFix`，转换到 UTM，
-再结合 GPS 天线到机器人基座的外参生成局部化的全局里程计。
+该包把传感器原点上的里程计转换到统一的机器人融合参考点。安装外参不再作为
+节点参数或 YAML 数值保存，全部在运行时从 URDF 发布的静态 TF 查询。
 
-## 核心链路
+## 数据链路
 
 ```text
-/fix                         sensor_msgs/NavSatFix
-  -> gpgga_filter_node
-/fix/filter                  sensor_msgs/NavSatFix
-  -> gps_to_utm_odometry_node  (+ /imu_orientation)
-/utm/gps                     nav_msgs/Odometry, T_utm_gps
-  -> gps_global_odometry_node  (+ T_gps_base)
-/odometry/gps                nav_msgs/Odometry, T_map_base_footprint
+/fix -> gpgga_filter_node -> /fix/filter
+  + 同时刻 /imu_orientation
+  -> gps_to_utm_odometry_node -> /utm/gps       (utm -> gps)
+  + TF: gps <-> base_footprint
+  -> gps_global_odometry_node -> /odometry/gps  (map -> base_footprint)
+
+/Odometry                                            (odom -> livox_imu)
+  + TF: livox_imu <-> base_footprint
+  -> odometry_tf_transform_node -> /odometry/lio/base (odom -> base_footprint)
 ```
 
-三个节点的职责如下：
+`gps_to_utm_odometry_node` 使用近似时间同步配对位置和航向，避免拿上一周期航向
+处理当前 GPS。`gps_global_odometry_node` 对 GPS 杆臂做完整刚体变换；通用里程计
+转换节点还会同步变换 twist、位姿协方差和速度协方差。
 
-- `gpgga_filter_node`：检查坐标、定位状态和协方差，并在连续有效帧达到要求后发布；
-- `gps_to_utm_odometry_node`：执行 WGS84 到 UTM 转换，注入可选航向并生成合理的位姿协方差；
-- `gps_global_odometry_node`：应用 `T_gps_base` 外参，以启动阶段的平均位姿建立局部原点，
-  将结果和协方差旋转到 `global_frame_id`。
+数学上，若传感器里程计为 `T_parent_sensor`，目标参考点由 TF 给出
+`T_sensor_base`，则输出为：
 
-默认不发布 TF，避免与 FAST-LIO 或 `robot_localization` 重复发布全局坐标系到
-`base_footprint` 的变换。`/gps_path` 仍作为现有 RViz 配置所需的轻量可视化输出。
+```text
+T_parent_base = T_parent_sensor * T_sensor_base
+```
 
-旧版反向 GPS 转换、重复滤波器、TF 拼接、外参落盘、零点化和测试节点已移除；
-现行链路不再依赖 `robot_interfaces` 的 UTM 分区消息。
+因此转弯时 GPS 天线、IMU 和车体参考点的轨迹可以不同，但转换后的两种观测都
+表示同一个 `base_footprint`，才能送进同一个 EKF。
 
 ## 启动
 
+GPS 链路独立启动时会自动加载项目 URDF：
+
 ```bash
 source install/setup.bash
-ros2 launch robot_odom_transform start_gps_transform.launch.py
+ros2 launch robot_odom_transform start_gps_transform.launch.py \
+  use_sim_time:=true
 ```
 
-外部输入：
-
-- `/fix`：GPS 定位；
-- `/imu_orientation`：双天线 GNSS 或已按当前项目约定转换的航向。
-
-常用接口可从 launch 覆盖：
+实时设备使用 `use_sim_time:=false`。完整系统建议使用统一入口：
 
 ```bash
-ros2 launch robot_odom_transform start_gps_transform.launch.py \
-  gps_topic:=/gps/fix \
-  orientation_topic:=/gnss/heading \
-  output_odom_topic:=/odometry/gps \
-  global_frame_id:=map \
-  child_frame_id:=base_footprint
+ros2 launch robot_ekf_localization localization_bringup.launch.py
 ```
 
-回放 rosbag 时附加 `use_sim_time:=true`。
+多个组件由外部统一启动时，只有一个组件应发布机器人模型，其余附加：
 
-## 配置
-
-默认配置位于 `config/gps_transform.defaults.yaml`。`config_file` 为空或文件不存在时，
-launch 会回退到这个文件。自定义配置示例：
-
-```yaml
-gps_global_odometry_node:
-  ros__parameters:
-    init_frames: 10
-    two_d_mode: true
-    publish_tf: false
-    gps_to_base:
-      x: 0.726732
-      y: -0.109451
-      z: 0.0
-      qx: 0.0
-      qy: 0.0
-      qz: -0.70710678
-      qw: 0.70710678
+```text
+publish_robot_description:=false
 ```
 
-其中外参定义为 `T_gps_base`：父坐标系是 GPS 天线，子坐标系是机器人基座，
-四元数顺序为 `x, y, z, w`。
+## 配置边界
 
-```bash
-ros2 launch robot_odom_transform start_gps_transform.launch.py \
-  config_file:=/absolute/path/to/gps_transform.yaml
+`config/gps_transform.defaults.yaml` 只包含数据过滤、时间同步、协方差、初始化和
+路径采样等运行参数。以下参数已经删除，不能再写入配置文件：
+
+```text
+gps_to_base.x/y/z/qx/qy/qz/qw
 ```
 
-没有航向输入时，可设置：
+GPS 安装位置和方向只能修改 `config/urdf/robot.urdf` 中
+`base_link_to_gps` 的 `<origin>`。修改后重新构建 `robot_description`，或者用
+launch 参数 `urdf_file:=/absolute/path/robot.urdf` 直接加载另一台车的模型。
 
-```yaml
-gps_to_utm_odometry_node:
-  ros__parameters:
-    use_orientation: false
-    require_orientation: false
-```
-
-此时位置转换仍可工作，但输出坐标轴按 UTM 东北方向建立，不能保证与启动方向任意的
-局部激光里程计轨迹对齐。
+没有航向输入时可将 `use_orientation` 设为 `false`。此时位置仍可转换，但不能
+仅凭单天线静止 GPS 确定机器人朝向。

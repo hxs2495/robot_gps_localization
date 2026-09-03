@@ -5,13 +5,14 @@
     Coordinate convention (REP-103):
       x forward, y left, z up.
 
-    The FAST-LIO pose is state_point.pos, i.e. the Livox IMU origin, although
-    the published child frame is named base_footprint. To keep every odometry
-    source referenced to the same physical point, base_footprint and base_link
-    are therefore colocated with that IMU origin in this model.
+    base_footprint is the only reference point consumed by the localization
+    filters. Sensor odometry remains attached to its native sensor frame and is
+    transformed to base_footprint through TF before fusion. For this vehicle,
+    base_link and the Livox IMU happen to be colocated; another installation
+    only needs to change the fixed joints below.
 
     Calibration sources:
-      * base_link -> livox_frame: FAST-LIO mid360.yaml extrinsic_T/R.
+      * livox_imu -> livox_frame: original FAST-LIO LiDAR-IMU calibration.
       * base_link -> gps: planar trajectory fit using all-data-8-23-4.
 
     The bag does not observably constrain the GPS-to-IMU height, so gps z is
@@ -28,7 +29,7 @@
     <color rgba="0.1 0.8 0.1 1.0"/>
   </material>
 
-  <!-- FAST-LIO/Livox-IMU planar reference point. -->
+  <!-- Fusion reference point. -->
   <link name="base_footprint"/>
 
   <link name="base_link">
@@ -47,9 +48,26 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
+  <!-- Livox IMU frame: FAST-LIO publishes its native pose for this link. -->
+  <link name="livox_imu">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.025"/>
+      </geometry>
+      <material name="livox_gray"/>
+    </visual>
+  </link>
+
+  <joint name="base_link_to_livox_imu" type="fixed">
+    <parent link="base_link"/>
+    <child link="livox_imu"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
   <!--
-    Livox LiDAR optical frame. FAST-LIO extrinsic_T is the LiDAR origin
-    expressed in the IMU/body frame; extrinsic_R is identity.
+    Livox LiDAR optical frame. The joint is T_livox_imu_livox_frame:
+    the LiDAR origin expressed in the IMU frame.
   -->
   <link name="livox_frame">
     <visual>
@@ -61,8 +79,8 @@
     </visual>
   </link>
 
-  <joint name="base_link_to_livox_frame" type="fixed">
-    <parent link="base_link"/>
+  <joint name="livox_imu_to_livox_frame" type="fixed">
+    <parent link="livox_imu"/>
     <child link="livox_frame"/>
     <origin xyz="-0.011000 -0.023290 0.044120" rpy="0 0 0"/>
   </joint>

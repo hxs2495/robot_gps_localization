@@ -5,7 +5,14 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    LogInfo,
+    OpaqueFunction,
+)
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -21,7 +28,7 @@ def _launch_nodes(context, default_config_file):
         actions.append(
             LogInfo(
                 msg=(
-                    f"[WARN] 标定配置文件不存在: {config_file}；"
+                    f"[WARN] 运行参数文件不存在: {config_file}；"
                     f"回退到包内默认配置: {default_config_file}"
                 )
             )
@@ -114,18 +121,43 @@ def generate_launch_description():
     default_config_file = os.path.join(
         package_share, "config", "gps_transform.defaults.yaml"
     )
+    description_share = get_package_share_directory("robot_description")
+    robot_description = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                description_share, "launch", "robot_description.launch.py"
+            )
+        ),
+        launch_arguments={
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+            "urdf_file": LaunchConfiguration("urdf_file"),
+        }.items(),
+        condition=IfCondition(LaunchConfiguration("publish_robot_description")),
+    )
 
     return LaunchDescription(
         [
             DeclareLaunchArgument(
                 "config_file",
                 default_value="",
-                description="可选标定YAML；为空或不存在时使用包内默认配置",
+                description="运行参数YAML；传感器安装外参必须只写在URDF中",
             ),
             DeclareLaunchArgument(
                 "use_sim_time",
                 default_value="false",
                 description="是否使用/clock仿真时间；回放rosbag时设为true",
+            ),
+            DeclareLaunchArgument(
+                "publish_robot_description",
+                default_value="true",
+                description="独立启动时发布URDF静态传感器TF",
+            ),
+            DeclareLaunchArgument(
+                "urdf_file",
+                default_value=os.path.join(
+                    description_share, "urdf", "robot.urdf"
+                ),
+                description="传感器安装外参的唯一URDF文件",
             ),
             DeclareLaunchArgument(
                 "gps_topic", default_value="/fix", description="原始NavSatFix话题"
@@ -163,8 +195,9 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "child_frame_id",
                 default_value="base_footprint",
-                description="机器人基座坐标系",
+                description="由TF转换得到的统一融合参考坐标系",
             ),
+            robot_description,
             OpaqueFunction(
                 function=_launch_nodes,
                 args=[default_config_file],

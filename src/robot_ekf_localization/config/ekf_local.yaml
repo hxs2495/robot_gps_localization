@@ -20,7 +20,8 @@ ekf_filter_node_local:
     world_frame: odom
 
     # FAST_LIO本身已融合IMU，这里只使用其位姿，避免重复融合IMU。
-    odom0: /Odometry
+    # FAST-LIO原生livox_imu位姿先按URDF/TF转换到base_footprint。
+    odom0: /odometry/lio/base
     # two_d_mode下只融合平面x/y/yaw；z/roll/pitch会被滤波器强制为零。
     odom0_config: [true,  true,  false,
                    false, false, true,

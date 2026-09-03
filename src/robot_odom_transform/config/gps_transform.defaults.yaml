@@ -10,13 +10,15 @@ gps_to_utm_odometry_node:
     child_frame_id: gps
     # 航向用于把ENU/UTM轨迹旋转到机器人启动方向。
     use_orientation: true
-    require_orientation: true
     # 航向消息未提供有效orientation_covariance[8]时的yaw方差(rad^2)。
     orientation_variance: 0.04
     unobserved_orientation_variance: 1000000.0
     # 防止未知/全零协方差让EKF把GPS当成无噪声观测。
     position_variance_floor: 0.01
     unknown_position_variance: 4.0
+    # GPS与航向按header.stamp配对，避免转弯时使用上一帧航向。
+    sync_queue_size: 20
+    max_orientation_time_offset: 0.05
 
 gps_global_odometry_node:
   ros__parameters:
@@ -33,14 +35,5 @@ gps_global_odometry_node:
     path_min_distance: 0.05
     # 只保留最新点以限制内存；设为0表示不限制。
     path_max_points: 10000
-
-    # 标定定义为T_gps_base：GPS天线坐标系中的机器人基座位姿。
-    # 无自定义config_file时使用以下默认小车标定值。
-    gps_to_base:
-      x: 0.726732
-      y: -0.109451
-      z: 0.0
-      qx: 0.0
-      qy: 0.0
-      qz: -0.70710678
-      qw: 0.70710678
+    # GPS天线到base_footprint的全部平移/旋转只从URDF静态TF读取。
+    transform_timeout: 0.2

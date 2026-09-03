@@ -11,6 +11,7 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(message_filters REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -29,6 +30,7 @@ add_executable(gps_to_utm_odometry_node src/gps_to_utm_odometry_node.cpp)
 ament_target_dependencies(
   gps_to_utm_odometry_node
   GeographicLib
+  message_filters
   nav_msgs
   rclcpp
   sensor_msgs
@@ -46,11 +48,23 @@ ament_target_dependencies(
   tf2_ros
 )
 
+add_executable(odometry_tf_transform_node src/odometry_tf_transform_node.cpp)
+ament_target_dependencies(
+  odometry_tf_transform_node
+  geometry_msgs
+  nav_msgs
+  rclcpp
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
+)
+
 install(
   TARGETS
     gpgga_filter_node
     gps_to_utm_odometry_node
     gps_global_odometry_node
+    odometry_tf_transform_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

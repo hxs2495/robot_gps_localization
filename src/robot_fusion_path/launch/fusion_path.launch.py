@@ -18,6 +18,11 @@ def generate_launch_description():
                 "odom_topic": LaunchConfiguration("odom_topic"),
                 "path_topic": LaunchConfiguration("path_topic"),
                 "path_frame_id": LaunchConfiguration("path_frame_id"),
+                "local_odom_topic": LaunchConfiguration("local_odom_topic"),
+                "local_path_topic": LaunchConfiguration("local_path_topic"),
+                "local_path_frame_id": LaunchConfiguration(
+                    "local_path_frame_id"
+                ),
                 "max_path_size": LaunchConfiguration("max_path_size"),
                 "min_distance": LaunchConfiguration("min_distance"),
             }
@@ -44,7 +49,22 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "path_frame_id",
                 default_value="",
-                description="Path坐标系；为空时使用Odometry的header.frame_id",
+                description="全局Path坐标系；为空时使用Odometry的header.frame_id",
+            ),
+            DeclareLaunchArgument(
+                "local_odom_topic",
+                default_value="/odometry/local",
+                description="局部融合后的里程计话题",
+            ),
+            DeclareLaunchArgument(
+                "local_path_topic",
+                default_value="/local_path",
+                description="发布的局部Path话题",
+            ),
+            DeclareLaunchArgument(
+                "local_path_frame_id",
+                default_value="",
+                description="局部Path坐标系；为空时使用Odometry的header.frame_id",
             ),
             DeclareLaunchArgument(
                 "max_path_size",

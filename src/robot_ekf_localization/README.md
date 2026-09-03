@@ -1,129 +1,91 @@
 # robot_ekf_localization
 
-该包只保留基于 `robot_localization` 的局部、全局双 EKF 融合链路。
-GPS 经纬度转换由 `robot_odom_transform` 负责，本包只消费转换后的 GPS 里程计。
+该包将所有传感器观测先转换到同一个 `base_footprint`，再执行局部、全局双 EKF。
+滤波器不再假设 FAST-LIO 原点、GPS 天线和车体原点重合。
 
-## 数据与 TF 链路
+## 融合链路
 
 ```text
-/Odometry (FAST-LIO, odom)
-  -> ekf_filter_node_local
-  -> /odometry/local (odom)
-                         \
-                          -> ekf_filter_node_global
-                         /
-/odometry/gps (map)
-  -> gps_recovery_smoother
-  -> /odometry/gps/smoothed (map) ----+
-  -> /odometry/global (odom)
-
-ekf_filter_node_global -> odom -> base_footprint TF
-static_transform_publisher -> 单位静态 map -> odom TF
+/Odometry (odom -> livox_imu)
+  -> TF参考点转换 -> /odometry/lio/base (odom -> base_footprint)
+  -> 局部EKF -> /odometry/local
+                                      \
+                                       -> 全局EKF -> /odometry/global
+                                      /
+/odometry/gps (map -> base_footprint)
+  -> GPS失效/恢复平滑 -> /odometry/gps/smoothed
 ```
 
-- 局部 EKF 只融合 FAST-LIO 的平面 `x/y/yaw`，输出连续的局部里程计；
-- FAST-LIO 发布层启用 `publish.flatten_z` 后，原始里程计、轨迹和世界点云
-  与二维融合平面对齐；局部及全局 EKF 的 `two_d_mode` 继续保证输出 z=0；
-- 全局 EKF 将局部轨迹作为差分运动约束，并用 GPS 的绝对 `x/y/yaw` 校正漂移；
-- FAST-LIO 已经融合 IMU，本包不重复融合同一 IMU；
-- 完整融合时局部 EKF 不发布 TF，全局 EKF 唯一发布
-  `odom -> base_footprint`；
-- `map -> odom` 固定为单位静态变换，不由 EKF 动态修正；
-- GPS 超时后全局绝对观测平滑贴回局部位姿，GPS 恢复后再限速、平滑地
-  重新锚定 GPS。
+- FAST-LIO 内部状态位于 `livox_imu`，其 LiDAR-IMU 初始外参从 TF 获取；
+- 局部 EKF 只消费已转换的 `/odometry/lio/base`；
+- GPS 节点先按 TF 把天线轨迹换算成 `base_footprint` 轨迹；
+- 完整融合时全局 EKF 是唯一的动态 `odom -> base_footprint` 发布者；
+- 当前方案使用单位静态 `map -> odom`，两套里程计都在同一局部原点下比较。
 
-旧版 `navsat_transform`、Cartographer EKF、GPS 时间戳改写及失效测试脚本已经移除。
+## 推荐启动
 
-## 启动
-
-完整双融合：
+rosbag 回放：
 
 ```bash
-ros2 launch robot_ekf_localization gps_localization.launch.py
+source install/setup.bash
+ros2 launch robot_ekf_localization localization_replay.launch.py \
+  bag_path:=robot_data/all-data-8-23-4
 ```
 
-也可以独立启动其中一级：
+该入口默认使用 `ROS_DOMAIN_ID=42` 并调用标准 rosbag2 播放器，避免 Gazebo、
+Livox 实时驱动或其他回放工具形成多个 `/clock`/传感器发布者。
+
+实时传感器：
+
+```bash
+ros2 launch robot_ekf_localization localization_bringup.launch.py \
+  use_sim_time:=false
+```
+
+统一入口只启动一个 `robot_state_publisher`，依次纳入机器人模型、FAST-LIO、GPS
+转换和双 EKF。传感器安装改变时无需修改融合 YAML 或 C++。
+
+仍可独立启动局部或完整 EKF：
 
 ```bash
 ros2 launch robot_ekf_localization local_ekf_localization.launch.py
-ros2 launch robot_ekf_localization global_ekf_localization.launch.py
+ros2 launch robot_ekf_localization gps_localization.launch.py
 ```
 
-双融合启动前需要外部提供：
-
-- `/Odometry`：FAST-LIO 局部里程计，位于 `odom`；
-- `/odometry/gps`：`robot_odom_transform` 输出的 GPS 绝对里程计，位于 `map`。
-
-常用接口均可覆盖：
-
-```bash
-ros2 launch robot_ekf_localization gps_localization.launch.py \
-  lio_odom_topic:=/Odometry \
-  gps_odom_topic:=/odometry/gps \
-  local_odom_topic:=/odometry/local \
-  global_odom_topic:=/odometry/global
-```
-
-不需要机器人位姿 TF 时可附加：
+主要接口：
 
 ```text
-publish_local_tf:=false publish_global_tf:=false
+lio_sensor_odom_topic:=/Odometry
+lio_base_odom_topic:=/odometry/lio/base
+lio_sensor_frame:=livox_imu
+base_frame:=base_footprint
+gps_odom_topic:=/odometry/gps
 ```
 
-## 时间模式
-
-launch 默认 `use_sim_time:=true`，适用于项目当前的 rosbag 回放流程：
-
-```bash
-ros2 bag play <bag_path> --clock
-ros2 launch fast_lio mapping.launch.py use_sim_time:=true
-ros2 launch robot_odom_transform start_gps_transform.launch.py use_sim_time:=true
-ros2 launch robot_ekf_localization gps_localization.launch.py use_sim_time:=true
-```
-
-实时传感器运行时，所有处理节点必须统一使用系统时间：
-
-```bash
-ros2 launch robot_ekf_localization gps_localization.launch.py use_sim_time:=false
-```
-
-不要用当前系统时间覆盖 rosbag 消息的原始时间戳，否则 TF 和传感器数据会落在
-不同时间轴上。
-
-## 配置
-
-- `config/ekf_local.yaml`：局部 EKF，`world_frame=odom`；
-- `config/ekf_global.yaml`：全局 EKF，`world_frame=odom`。
-
-全局 EKF 的 GPS 输入必须满足：
+## TF 所有权
 
 ```text
-/odometry/gps.header.frame_id == map
-/odometry/gps/smoothed.header.frame_id == map
+robot_state_publisher : base_footprint -> base_link -> {livox_imu, gps}
+                                              livox_imu -> livox_frame
+static publisher      : map -> odom
+global EKF            : odom -> base_footprint
 ```
 
-启动文件提供唯一的单位静态 `map -> odom`。全局 EKF 在 `odom` 中输出
-GPS 修正后的 `odom -> base_footprint`；不得再启动其他同名 TF 发布器。
+不要再运行 GPS、FAST-LIO 或其他节点发布上述同名动态 TF。安装外参只修改
+`config/urdf/robot.urdf`。
 
-GPS 状态机参数位于 `gps_recovery_smoother.ros__parameters`。其中
-`gps_timeout` 控制失效判定，`loss_transition_duration` 控制贴回局部轨迹的
-时长，`recovery_duration` 和两个最大校正速度控制恢复平滑度，
-`tracking_covariance_scale` 控制正常 GPS 的置信度（默认 `0.01`，数值越小
-越信任 GPS）。
-
-## 验证与调参
+## 验证
 
 ```bash
-ros2 topic hz /Odometry
-ros2 topic hz /odometry/gps
-ros2 topic hz /odometry/gps/smoothed
-ros2 topic hz /odometry/local
+ros2 topic echo /Odometry --once
+ros2 topic echo /odometry/lio/base --once
+ros2 topic echo /odometry/gps --once
 ros2 topic hz /odometry/global
-ros2 run tf2_ros tf2_echo map odom
+
+ros2 run tf2_ros tf2_echo base_footprint gps
+ros2 run tf2_ros tf2_echo livox_imu livox_frame
 ros2 run tf2_ros tf2_echo odom base_footprint
 ```
 
-- GPS 抖动明显：增大 GPS 消息的 `pose.covariance`；
-- GPS 跳点未被拒绝：减小 `ekf_global.yaml` 的
-  `odom1_pose_rejection_threshold`；
-- 正常 GPS 被拒绝：适当增大该阈值，并检查 GPS 协方差是否符合实际精度。
+应看到 `/Odometry.child_frame_id=livox_imu`，而送入滤波器的激光和 GPS 里程计
+都应为 `child_frame_id=base_footprint`。

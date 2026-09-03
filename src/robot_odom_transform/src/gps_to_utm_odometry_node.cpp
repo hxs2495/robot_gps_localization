@@ -8,6 +8,9 @@
 #include <string>
 
 #include <GeographicLib/UTMUPS.hpp>
+#include <message_filters/subscriber.h>
+#include <message_filters/synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
 #include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
@@ -25,11 +28,12 @@ public:
     declare_parameter<std::string>("frame_id", "utm");
     declare_parameter<std::string>("child_frame_id", "gps");
     declare_parameter<bool>("use_orientation", true);
-    declare_parameter<bool>("require_orientation", true);
     declare_parameter<double>("orientation_variance", 0.04);
     declare_parameter<double>("unobserved_orientation_variance", 1.0e6);
     declare_parameter<double>("position_variance_floor", 0.01);
     declare_parameter<double>("unknown_position_variance", 4.0);
+    declare_parameter<int>("sync_queue_size", 20);
+    declare_parameter<double>("max_orientation_time_offset", 0.05);
 
     const auto gps_topic = get_parameter("gps_topic").as_string();
     const auto orientation_topic = get_parameter("orient_topic").as_string();
@@ -37,7 +41,6 @@ public:
     frame_id_ = get_parameter("frame_id").as_string();
     child_frame_id_ = get_parameter("child_frame_id").as_string();
     use_orientation_ = get_parameter("use_orientation").as_bool();
-    require_orientation_ = get_parameter("require_orientation").as_bool();
     orientation_variance_ = std::max(
       0.0, get_parameter("orientation_variance").as_double());
     unobserved_orientation_variance_ = std::max(
@@ -46,15 +49,29 @@ public:
       1.0e-9, get_parameter("position_variance_floor").as_double());
     unknown_position_variance_ = std::max(
       position_variance_floor_, get_parameter("unknown_position_variance").as_double());
+    sync_queue_size_ = std::max(2, static_cast<int>(get_parameter("sync_queue_size").as_int()));
+    max_orientation_time_offset_ = std::max(
+      0.001, get_parameter("max_orientation_time_offset").as_double());
     last_orientation_variance_ = orientation_variance_;
 
-    gps_sub_ = create_subscription<sensor_msgs::msg::NavSatFix>(
-      gps_topic, rclcpp::SensorDataQoS(),
-      std::bind(&GpsToUtmOdometryNode::convert_fix, this, std::placeholders::_1));
     if (use_orientation_) {
-      orientation_sub_ = create_subscription<sensor_msgs::msg::Imu>(
-        orientation_topic, rclcpp::SensorDataQoS(),
-        std::bind(&GpsToUtmOdometryNode::update_orientation, this, std::placeholders::_1));
+      gps_filter_sub_.subscribe(this, gps_topic, rmw_qos_profile_sensor_data);
+      orientation_filter_sub_.subscribe(
+        this, orientation_topic, rmw_qos_profile_sensor_data);
+      SyncPolicy policy(sync_queue_size_);
+      policy.setMaxIntervalDuration(
+        rclcpp::Duration::from_seconds(max_orientation_time_offset_));
+      synchronizer_ = std::make_shared<Synchronizer>(
+        static_cast<const SyncPolicy &>(policy),
+        gps_filter_sub_, orientation_filter_sub_);
+      synchronizer_->registerCallback(
+        std::bind(
+          &GpsToUtmOdometryNode::convert_synchronized,
+          this, std::placeholders::_1, std::placeholders::_2));
+    } else {
+      gps_sub_ = create_subscription<sensor_msgs::msg::NavSatFix>(
+        gps_topic, rclcpp::SensorDataQoS(),
+        std::bind(&GpsToUtmOdometryNode::convert_fix, this, std::placeholders::_1));
     }
     odometry_pub_ = create_publisher<nav_msgs::msg::Odometry>(odom_topic, 10);
 
@@ -64,14 +81,23 @@ public:
   }
 
 private:
-  void update_orientation(const sensor_msgs::msg::Imu::SharedPtr msg)
+  void convert_synchronized(
+    const sensor_msgs::msg::NavSatFix::ConstSharedPtr & fix,
+    const sensor_msgs::msg::Imu::ConstSharedPtr & orientation)
+  {
+    if (update_orientation(orientation)) {
+      convert_fix(fix);
+    }
+  }
+
+  bool update_orientation(const sensor_msgs::msg::Imu::ConstSharedPtr & msg)
   {
     tf2::Quaternion orientation(
       msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
     if (!std::isfinite(orientation.length2()) || orientation.length2() < 1.0e-12) {
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 3000, "收到无效航向四元数，忽略该帧");
-      return;
+      return false;
     }
     orientation.normalize();
 
@@ -91,21 +117,16 @@ private:
       std::isfinite(message_variance) && message_variance > 0.0 ?
       message_variance : orientation_variance_;
     has_orientation_ = true;
+    return true;
   }
 
-  void convert_fix(const sensor_msgs::msg::NavSatFix::SharedPtr msg)
+  void convert_fix(const sensor_msgs::msg::NavSatFix::ConstSharedPtr & msg)
   {
     if (msg->status.status < sensor_msgs::msg::NavSatStatus::STATUS_FIX) {
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 3000, "GPS无有效定位，跳过该帧");
       return;
     }
-    if (use_orientation_ && require_orientation_ && !has_orientation_) {
-      RCLCPP_WARN_THROTTLE(
-        get_logger(), *get_clock(), 3000, "尚未收到航向数据，暂不发布UTM里程计");
-      return;
-    }
-
     try {
       double easting = 0.0;
       double northing = 0.0;
@@ -178,13 +199,17 @@ private:
   }
 
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr gps_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr orientation_sub_;
+  using SyncPolicy = message_filters::sync_policies::ApproximateTime<
+    sensor_msgs::msg::NavSatFix, sensor_msgs::msg::Imu>;
+  using Synchronizer = message_filters::Synchronizer<SyncPolicy>;
+  message_filters::Subscriber<sensor_msgs::msg::NavSatFix> gps_filter_sub_;
+  message_filters::Subscriber<sensor_msgs::msg::Imu> orientation_filter_sub_;
+  std::shared_ptr<Synchronizer> synchronizer_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odometry_pub_;
 
   std::string frame_id_;
   std::string child_frame_id_;
   bool use_orientation_{true};
-  bool require_orientation_{true};
   bool has_orientation_{false};
   double yaw_{0.0};
   double orientation_variance_{0.04};
@@ -192,6 +217,8 @@ private:
   double unobserved_orientation_variance_{1.0e6};
   double position_variance_floor_{0.01};
   double unknown_position_variance_{4.0};
+  int sync_queue_size_{20};
+  double max_orientation_time_offset_{0.05};
 };
 
 int main(int argc, char ** argv)

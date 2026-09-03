@@ -3,7 +3,7 @@
 <package format="3">
   <name>robot_fusion_path</name>
   <version>0.0.0</version>
-  <description>Convert fused global odometry to a nav_msgs/Path trajectory.</description>
+  <description>Convert fused global and local odometry to nav_msgs/Path trajectories.</description>
   <maintainer email="1846229364@qq.com">hxs</maintainer>
   <license>MIT</license>
 
