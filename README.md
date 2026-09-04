@@ -93,6 +93,8 @@ global EKF:            odom -> base_footprint
 完整系统中只能有一个 `robot_state_publisher` 和一个动态
 `odom -> base_footprint` 发布者。
 
+![截图 2026-09-04 13-19-30](README.assets/%E6%88%AA%E5%9B%BE%202026-09-04%2013-19-30.png)
+
 ## 调整传感器安装位置
 
 唯一机械外参文件为 [`config/urdf/robot.urdf`](config/urdf/robot.urdf)。

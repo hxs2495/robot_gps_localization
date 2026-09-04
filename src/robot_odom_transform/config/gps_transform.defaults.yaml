@@ -1,7 +1,7 @@
 gpgga_filter_node:
   ros__parameters:
     # NavSatFix.status.status最低要求。-1允许STATUS_NO_FIX，由后级再次检查有效FIX。
-    required_status: -1
+    required_status: 2 # -1: STATUS_NO_FIX, 0: STATUS_FIX, 1: STATUS_SBAS_FIX, 2: STATUS_GBAS_FIX 根据实际数据状态情况选择设置过滤
     recover_frame_count: 1
 
 gps_to_utm_odometry_node:
