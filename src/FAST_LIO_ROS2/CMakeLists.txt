@@ -113,7 +113,6 @@ target_include_directories(alaserPGO PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   ${PCL_INCLUDE_DIRS}
-  ${CERES_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
   ${GTSAM_INCLUDE_DIR}
 )
@@ -125,7 +124,7 @@ target_include_directories(fastlio_mapping PUBLIC
 
 target_link_libraries(fastlio_mapping ${PCL_LIBRARIES} ${PYTHON_LIBRARIES} Eigen3::Eigen)
 target_link_libraries(alaserPGO 
-  ${PCL_LIBRARIES} ${CERES_LIBRARIES}
+  ${PCL_LIBRARIES}
   ${OpenMP_CXX_FLAGS}
   gtsam
 )

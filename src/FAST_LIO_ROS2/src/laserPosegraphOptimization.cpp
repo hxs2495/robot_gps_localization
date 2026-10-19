@@ -40,8 +40,6 @@
 
 #include <eigen3/Eigen/Dense>
 
-#include <ceres/ceres.h>
-
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/nonlinear/Marginals.h>
