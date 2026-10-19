@@ -22,7 +22,8 @@ source install/setup.bash
 ./localization_bringup.sh use_sim_time:=false
 ```
 
-统一入口默认发布 `/gps_path`、`/local_path` 和 `/global_path`。
+统一入口默认发布 `/gps_path`、`/local_path`、`/global_path`，以及最终的
+WGS84 全球融合定位 `/localization/global` 和 `/localization/global_fix`。
 
 ## 融合流程
 
@@ -42,6 +43,10 @@ source install/setup.bash
                               全局EKF
                                  |
                          /odometry/global
+                                 |
+                       全球锚点与WGS84反算
+                                 |
+              /localization/global + /localization/global_fix
 ```
 
 - FAST-LIO 输出 `odom -> livox_imu`，发布层 z 固定为 0。
@@ -77,6 +82,8 @@ source install/setup.bash
 | `/odometry/gps` | `map -> base_footprint` | 杆臂补偿后的 GPS 观测 |
 | `/odometry/gps/smoothed` | `map -> base_footprint` | GPS 消失/恢复状态机输出 |
 | `/odometry/global` | `odom -> base_footprint` | 最终全局融合定位 |
+| `/localization/global` | WGS84位置 + ENU姿态 + 速度/协方差 | 最终全球融合定位（自定义消息） |
+| `/localization/global_fix` | `sensor_msgs/msg/NavSatFix` | 最终全球融合位置兼容接口 |
 
 送入 EKF 的里程计必须都描述 `base_footprint`，不能直接混合 GPS 天线和
 LiDAR/IMU 原点轨迹。

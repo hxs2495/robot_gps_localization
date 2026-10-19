@@ -6,7 +6,6 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
@@ -96,11 +95,15 @@ def generate_launch_description():
         },
     )
 
-    paths = _include(
+    localization_outputs = _include(
         "robot_fusion_path",
         "fusion_path.launch.py",
         {
             "use_sim_time": LaunchConfiguration("use_sim_time"),
+            "publish_paths": LaunchConfiguration("publish_paths"),
+            "publish_global_localization": LaunchConfiguration(
+                "publish_global_localization"
+            ),
             "odom_topic": LaunchConfiguration("global_odom_topic"),
             "path_topic": LaunchConfiguration("global_path_topic"),
             "path_frame_id": LaunchConfiguration("path_frame_id"),
@@ -109,8 +112,30 @@ def generate_launch_description():
             "local_path_frame_id": LaunchConfiguration("path_frame_id"),
             "max_path_size": LaunchConfiguration("path_max_size"),
             "min_distance": LaunchConfiguration("path_min_distance"),
+            "gps_topic": LaunchConfiguration("filtered_gps_topic"),
+            "orientation_topic": LaunchConfiguration("orientation_topic"),
+            "global_localization_topic": LaunchConfiguration(
+                "global_localization_topic"
+            ),
+            "global_fix_topic": LaunchConfiguration("global_fix_topic"),
+            "base_frame_id": LaunchConfiguration("base_frame"),
+            "gps_frame_id": LaunchConfiguration("gps_frame"),
+            "use_orientation": LaunchConfiguration(
+                "global_use_orientation"
+            ),
+            "orientation_convention": LaunchConfiguration(
+                "global_orientation_convention"
+            ),
+            "orientation_yaw_offset": LaunchConfiguration(
+                "global_orientation_yaw_offset"
+            ),
+            "initial_enu_yaw": LaunchConfiguration(
+                "global_initial_enu_yaw"
+            ),
+            "publish_nav_sat_fix": LaunchConfiguration(
+                "publish_global_fix"
+            ),
         },
-        condition=IfCondition(LaunchConfiguration("publish_paths")),
     )
 
     return LaunchDescription(
@@ -230,6 +255,51 @@ def generate_launch_description():
                 description="是否随统一入口发布local/global Path",
             ),
             DeclareLaunchArgument(
+                "publish_global_localization",
+                default_value="true",
+                description="是否发布WGS84全球融合定位",
+            ),
+            DeclareLaunchArgument(
+                "global_localization_topic",
+                default_value="/localization/global",
+                description="完整全球融合定位话题",
+            ),
+            DeclareLaunchArgument(
+                "global_fix_topic",
+                default_value="/localization/global_fix",
+                description="兼容NavSatFix的全球融合位置话题",
+            ),
+            DeclareLaunchArgument(
+                "gps_frame",
+                default_value="gps",
+                description="GPS天线frame，须与URDF一致",
+            ),
+            DeclareLaunchArgument(
+                "global_orientation_convention",
+                default_value="north_clockwise",
+                description="全球输出初始化航向约定，须与GPS转换配置一致",
+            ),
+            DeclareLaunchArgument(
+                "global_use_orientation",
+                default_value="true",
+                description="是否用GNSS/双天线航向初始化全球姿态",
+            ),
+            DeclareLaunchArgument(
+                "global_orientation_yaw_offset",
+                default_value="0.0297",
+                description="全球输出初始化航向零偏，须与GPS转换配置一致",
+            ),
+            DeclareLaunchArgument(
+                "global_initial_enu_yaw",
+                default_value="0.0",
+                description="不使用航向话题时的初始ENU yaw(rad)",
+            ),
+            DeclareLaunchArgument(
+                "publish_global_fix",
+                default_value="true",
+                description="是否额外发布NavSatFix兼容输出",
+            ),
+            DeclareLaunchArgument(
                 "local_path_topic",
                 default_value="/local_path",
                 description="局部融合Path话题",
@@ -264,6 +334,6 @@ def generate_launch_description():
             fast_lio,
             gps_transform,
             fusion,
-            paths,
+            localization_outputs,
         ]
     )
